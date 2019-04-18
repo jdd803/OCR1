@@ -59,15 +59,32 @@ def loss_fun(rois, cls, offset, roi_mask, img_mask, gt_boxes, rpn_cls_score, rpn
     return total_loss
 
 
-def get_model(img):
-    model = tf.keras.Model()
-    pass
+def preprocess(img, gtbox, gtmask):
+    img_shape1 = img.shape
+    right = img_shape1[1] - 640
+    bottom = img_shape1[0] - 640
+    left = np.random.randint(0, right)
+    top = np.random.randint(0, bottom)
+    img1 = img[top:top + 640, left:left + 640]
+    inds = gtbox[:, 0::2] >= top and gtbox[:, 1::3] < top + 640
+    temp1 = gtbox[inds, 0] - left
+    temp2 = gtbox[inds, 1] - top
+    temp3 = gtbox[inds, 2] - left
+    temp4 = gtbox[inds, 3] - top
+    gtbox1 = np.stack((temp1, temp2, temp3, temp4), axis=-1)
+    mask1 = gtmask[inds, 0] - left
+    mask2 = gtmask[inds, 1] - top
+    mask3 = gtmask[inds, 2] - left
+    mask4 = gtmask[inds, 3] - top
+    mask5 = gtmask[inds, 4] - left
+    mask6 = gtmask[inds, 5] - top
+    mask7 = gtmask[inds, 6] - left
+    mask8 = gtmask[inds, 7] - top
+    gtmask1 = np.stack((mask1, mask2, mask3, mask4, mask5, mask6, mask7, mask8), axis=-1)
+    return img1, gtbox1, gtmask1
+
 
 def main():
-    input_images = tf.keras.layers.Input(shape=[224, 224, 3], name='input_images')
-    img_mask = tf.keras.layers.Input(shape=[None, 8], name='mask')
-    gt_boxes = tf.keras.layers.Input(shape=[None, 5], name='groundtruth_boxes')
-
     model = MyModel()
 
     opt = keras.optimizers.Adam(lr=0.001)
@@ -77,11 +94,13 @@ def main():
 
     for i in range(100):
         img, gtbox, gtmask = next_batch(1, i % 10)
-        images = image_mean_subtraction(img['1'])
+        img = img['1']
+        img1, gtbox1, gtmask1 = preprocess(img, gtbox, gtmask)
+        images = image_mean_subtraction(img1)
         with tf.GradientTape() as t:
             rpn_cls_score, rpn_bbox_pred, result_keep = model(images)
             rois, cls, offset, roi_mask = result_keep[0], result_keep[1], result_keep[2], result_keep[3]
-            loss = loss_fun(rois, cls, offset, roi_mask, img_mask, gt_boxes, rpn_cls_score, rpn_bbox_pred)
+            loss = loss_fun(rois, cls, offset, roi_mask, gtmask1, gtbox1, rpn_cls_score, rpn_bbox_pred)
         grads = t.gradient(loss, model.trainable_variables)
         opt.apply_gradients(zip(grads, model.trainable_variables))
 

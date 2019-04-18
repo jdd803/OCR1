@@ -2,7 +2,7 @@ import cv2 as cv
 import os
 import numpy as np
 
-img = cv.imread('./dataset/ch4_training_images/img_1.jpg')
+img = cv.imread('./dataset/dataset/ch4_training_images/img_1.jpg')
 gtbox = [[377,117,465,130,1],
          [493,115,519,131,1],
          [374,155,409,170,1],
