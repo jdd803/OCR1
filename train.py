@@ -66,20 +66,29 @@ def preprocess(img, gtbox, gtmask):
     left = np.random.randint(0, right)
     top = np.random.randint(0, bottom)
     img1 = img[top:top + 640, left:left + 640]
-    inds = gtbox[:, 0::2] >= top and gtbox[:, 1::3] < top + 640
-    temp1 = gtbox[inds, 0] - left
-    temp2 = gtbox[inds, 1] - top
-    temp3 = gtbox[inds, 2] - left
-    temp4 = gtbox[inds, 3] - top
+    gtbox0 = np.array(gtbox)
+    gtmask0 = np.array(gtmask)
+
+
+    inds = []
+    for i in range(len(gtbox0)):
+        if gtbox0[i, 0] >= left and gtbox0[i, 2] < left+640 and gtbox0[i, 1] >= top and gtbox0[i, 3] < top+640:
+            inds.append(i)
+
+    # inds = gtbox0[gtbox0[:, 0::2] < top+640, 0::2] >= top
+    temp1 = gtbox0[inds, 0] - left
+    temp2 = gtbox0[inds, 1] - top
+    temp3 = gtbox0[inds, 2] - left
+    temp4 = gtbox0[inds, 3] - top
     gtbox1 = np.stack((temp1, temp2, temp3, temp4), axis=-1)
-    mask1 = gtmask[inds, 0] - left
-    mask2 = gtmask[inds, 1] - top
-    mask3 = gtmask[inds, 2] - left
-    mask4 = gtmask[inds, 3] - top
-    mask5 = gtmask[inds, 4] - left
-    mask6 = gtmask[inds, 5] - top
-    mask7 = gtmask[inds, 6] - left
-    mask8 = gtmask[inds, 7] - top
+    mask1 = gtmask0[inds, 0] - left
+    mask2 = gtmask0[inds, 1] - top
+    mask3 = gtmask0[inds, 2] - left
+    mask4 = gtmask0[inds, 3] - top
+    mask5 = gtmask0[inds, 4] - left
+    mask6 = gtmask0[inds, 5] - top
+    mask7 = gtmask0[inds, 6] - left
+    mask8 = gtmask0[inds, 7] - top
     gtmask1 = np.stack((mask1, mask2, mask3, mask4, mask5, mask6, mask7, mask8), axis=-1)
     return img1, gtbox1, gtmask1
 
@@ -94,8 +103,10 @@ def main():
 
     for i in range(100):
         img, gtbox, gtmask = next_batch(1, i % 10)
-        img = img['1']
-        img1, gtbox1, gtmask1 = preprocess(img, gtbox, gtmask)
+        img0 = img['1']
+        gtbox0 = gtbox['1']
+        gtmask0 = gtmask['1']
+        img1, gtbox1, gtmask1 = preprocess(img0, gtbox0, gtmask0)
         images = image_mean_subtraction(img1)
         with tf.GradientTape() as t:
             rpn_cls_score, rpn_bbox_pred, result_keep = model(images)

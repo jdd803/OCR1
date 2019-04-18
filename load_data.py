@@ -29,6 +29,8 @@ def next_batch(batch_size, pos):
         for j in range(0, len(gtbox)):
             gtbox[j] = gtbox[j].rstrip('\n')
             gtbox[j] = gtbox[j].split(',')
+            gtbox1 = map(int, gtbox[j])
+            gtbox[j] = list(gtbox1)
         file.close()
         gtboxes[str(i + 1 + pos)] = gtbox
 
@@ -40,6 +42,8 @@ def next_batch(batch_size, pos):
         for j in range(0, len(mask)):
             mask[j] = mask[j].rstrip('\n')
             mask[j] = mask[j].split(',')
+            mask1 = map(int, mask[j][:-1])
+            mask[j] = list(mask1)
         file.close()
         masks[str(i + 1 + pos)] = mask
 
