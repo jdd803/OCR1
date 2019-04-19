@@ -61,21 +61,21 @@ def loss_fun(rois, cls, offset, roi_mask, img_mask, gt_boxes, rpn_cls_score, rpn
 
 def preprocess(img, gtbox, gtmask):
     img_shape1 = img.shape
-    right = img_shape1[1] - 640
-    bottom = img_shape1[0] - 640
-    left = np.random.randint(0, right)
-    top = np.random.randint(0, bottom)
-    img1 = img[top:top + 640, left:left + 640]
-    gtbox0 = np.array(gtbox)
-    gtmask0 = np.array(gtmask)
-
-
+    right = img_shape1[1] - 320
+    bottom = img_shape1[0] - 320
     inds = []
-    for i in range(len(gtbox0)):
-        if gtbox0[i, 0] >= left and gtbox0[i, 2] < left+640 and gtbox0[i, 1] >= top and gtbox0[i, 3] < top+640:
-            inds.append(i)
+    while len(inds) == 0:
+        left = np.random.randint(0, right)
+        top = np.random.randint(0, bottom)
+        img1 = img[top:top + 320, left:left + 320]
+        gtbox0 = np.array(gtbox)
+        gtmask0 = np.array(gtmask)
 
-    # inds = gtbox0[gtbox0[:, 0::2] < top+640, 0::2] >= top
+        for i in range(len(gtbox0)):
+            if gtbox0[i, 0] >= left and gtbox0[i, 2] < left+320 and gtbox0[i, 1] >= top and gtbox0[i, 3] < top+320:
+                inds.append(i)
+
+    # inds = gtbox0[gtbox0[:, 0::2] < +640, 0::2] >= top
     temp1 = gtbox0[inds, 0] - left
     temp2 = gtbox0[inds, 1] - top
     temp3 = gtbox0[inds, 2] - left

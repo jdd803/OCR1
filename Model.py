@@ -220,7 +220,6 @@ def model_part2(imdims, rois, ps_score_map, bbox_shift):
     return cls, cls_result, cls_score, mask_result, rois, bbox
 
 
-@tf.function
 def model_part3(results):
     '''
     apply nms on the rois
@@ -323,3 +322,4 @@ class MyModel(tf.keras.Model):
         result = model_part2(imdims=(224, 224), rois=roi, ps_score_map=ps_score, bbox_shift=bbox_shift)
         result_keep = model_part3(results=result)
         return rpn_cls_score, rpn_bbox_pred, result_keep
+

@@ -325,8 +325,8 @@ def map_coordinates1(inputs, boxes, k, num_classes, pool):
             pooled_box[i] = 0
             continue
         box = boxes[i]
-        width = box[2] - box[0]
-        height = box[3] - box[1]
+        width = box[2] - box[0] + 1
+        height = box[3] - box[1] + 1
         width = tf.cast(width, 'int32')
         height = tf.cast(height, 'int32')
         tp_lf = np.reshape(box[0:2], (1, 2))
