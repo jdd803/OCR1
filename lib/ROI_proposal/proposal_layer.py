@@ -135,11 +135,15 @@ def _proposal_layer_py(rpn_bbox_cls_prob, rpn_bbox_pred, im_dims, cfg_key, _feat
     # 6. apply nms (e.g. threshold = 0.7)
     # 7. take after_nms_topN (e.g. 300)
     # 8. return the top proposals (-> RoIs top)
-    keep = nms(np.hstack((proposals, scores)), nms_thresh)
+    scores = np.reshape(scores, (-1,))
+    keep = tf.image.non_max_suppression(proposals, scores, max_output_size=post_nms_topN, iou_threshold=nms_thresh)
+    # scores = np.reshape(scores, (-1, 1))
+    # keep = nms(np.hstack((proposals, scores)), nms_thresh)
+
     if post_nms_topN > 0:
         keep = keep[:post_nms_topN]
     proposals = proposals[keep, :]
-    scores = scores[keep]
+    # scores = scores[keep]
 
     # Output rois blob
     # Our RPN implementation only supports a single input image, so all

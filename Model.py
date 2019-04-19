@@ -239,8 +239,11 @@ def model_part3(results):
     #     roi = tf.concat((roi, roi_item), axis=0)
 
     # apply nms on rois to get boxes with highest scores
-    # keep = tf.compat.v1.py_func(nms,[roi,0.3],tf.int32)   # the keeped boxes' orders
-    keep = tf.py_function(nms, [roi, 0.3], tf.int32)
+    # keep = tf.py_function(nms, [roi, 0.3], tf.int32)
+    # keep = nms(roi, 0.3)
+    score = tf.reshape(results[2], (-1,))
+    keep = tf.image.non_max_suppression(per_roi, score, iou_threshold=0.3)
+
     for i in keep:
         keep1 = nms1(i, keep, roi, 0.5)
         box_up_num = len(keep1) + 1
