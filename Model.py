@@ -202,13 +202,17 @@ def model_part2(imdims, rois, ps_score_map, bbox_shift):
     rois = tf.concat((rois, proposals), axis=0)   # (2n, 4)
 
     bbox = model_part2_2(rois[0], bbox_shift)
+    bbox = tf.reshape(bbox, (1, -1))
     cls, cls_result, cls_score, mask_result = model_part2_1(rois[0], ps_score_map)
+    cls = tf.reshape(cls, (1, -1))
     cls_result = tf.reshape(cls_result, (1,))
     cls_score = tf.reshape(cls_score, (1,))
 
     for i in tf.range(1, rois.shape[0]):
         bbox1 = model_part2_2(rois[i], bbox_shift)
+        bbox1 = tf.reshape(bbox1, (1, -1))
         cls1, cls_result1, cls_score1, mask_result1 = model_part2_1(rois[i], ps_score_map)
+        cls1 = tf.reshape(cls1, (1, -1))
         cls = tf.concat((cls, cls1), axis=0)
         cls_result1 = tf.reshape(cls_result1, (1,))
         cls_score1 = tf.reshape(cls_score1, (1,))

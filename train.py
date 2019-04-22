@@ -17,6 +17,10 @@ from lib.loss.loss_function import rpn_cls_loss, rpn_bbox_loss
 from load_data import next_batch
 
 
+def get_keep(inputs, keep):
+    return inputs[keep]
+
+
 def preprocess(img, gtbox, gtmask):
     img_shape1 = img.shape
     right = img_shape1[1] - 320
@@ -38,7 +42,8 @@ def preprocess(img, gtbox, gtmask):
     temp2 = gtbox0[inds, 1] - top
     temp3 = gtbox0[inds, 2] - left
     temp4 = gtbox0[inds, 3] - top
-    gtbox1 = np.stack((temp1, temp2, temp3, temp4), axis=-1)
+    temp5 = gtbox0[inds, 4]
+    gtbox1 = np.stack((temp1, temp2, temp3, temp4, temp5), axis=-1)
     mask1 = gtmask0[inds, 0] - left
     mask2 = gtmask0[inds, 1] - top
     mask3 = gtmask0[inds, 2] - left
@@ -59,8 +64,8 @@ def loss_mask(mask, roi, gtmask):
 
 def loss_rpn(rpn_cls_score, rpn_bbox_pred, gt_boxes, img_dims):
     rpn_labels, rpn_bbox_targets, rpn_bbox_inside_weights, rpn_bbox_outside_weights = \
-        anchor_target_layer(rpn_cls_score=rpn_cls_score, gt_boxes=gt_boxes, im_dims=img_dims,
-                            feat_stride=cfg.network.RPN_FEAT_STRIDE, anchor_scales=cfg.network.ANCHOR_SCALES)
+        anchor_target_layer(rpn_cls_score, gt_boxes, img_dims,
+                            cfg.network.RPN_FEAT_STRIDE, cfg.network.ANCHOR_SCALES)
     loss1 = rpn_cls_loss(rpn_cls_score, rpn_labels)
     loss2 = rpn_bbox_loss(rpn_bbox_pred, rpn_bbox_targets, rpn_bbox_inside_weights, rpn_bbox_outside_weights)
     return loss1 + loss2
@@ -102,7 +107,7 @@ def main():
         gtbox0 = gtbox['1']
         gtmask0 = gtmask['1']
         img1, gtbox1, gtmask1 = preprocess(img0, gtbox0, gtmask0)
-        img_dims = images.shape[0:2]
+        img_dims = img1.shape[0:2]
         img_mask = generate_mask(img_dims, gtmask1)
         images = image_mean_subtraction(img1)
         with tf.GradientTape() as t:
@@ -112,14 +117,14 @@ def main():
             cls_score = result[2]
             cls_pred = result[0]
             offset_pred = result[5]
-            roi_pred_keep = roi_pred[keep]
-            cls_score_keep = cls_score[keep]
-            cls_pred_keep = cls_pred[keep]
-            offset_pred_keep = offset_pred[keep]
+            roi_pred_keep = tf.gather(roi_pred, keep, axis=0)
+            cls_score_keep = tf.gather(cls_score, keep, axis=0)
+            cls_pred_keep = tf.gather(cls_pred, keep, axis=0)
+            offset_pred_keep = tf.gather(offset_pred, keep, axis=0)
 
             rois1, labels1, bbox_targets1, bbox_inside_weights1, \
             bbox_outside_weights1, keep_inds, fg_num = proposal_target_layer(
-                roi_pred_keep, gtbox1, cfg.dataset.NUM_CLASSES
+                roi_pred_keep, gtbox1, 1
             )
 
             rpn_loss = loss_rpn(rpn_cls_score, rpn_bbox_pred, gtbox1, img_dims)
@@ -142,7 +147,7 @@ def main():
         opt.apply_gradients(zip(grads, model.trainable_variables))
 
         if i % 10 == 0:
-            print('Training loss (for one batch) at step %s: %s' % (i, float(loss)))
+            print('Training loss (for one batch) at step %s: %s' % (i, float(total_loss)))
             print('Seen so far: %s samples' % ((i + 1) * 64))
 
 

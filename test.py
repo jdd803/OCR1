@@ -1,8 +1,11 @@
 import tensorflow as tf
 import numpy as np
 
-a = [1, 2, 3, 4, 5, 6]
-a = np.array(a)
-b = np.where((a >= 2) & (a <= 4))
+a = tf.range(16)
+b = a + 2
 print(b)
-print(a[b])
+b[0] = 0
+print(b)
+keep = tf.convert_to_tensor([0, 2, 3])
+d = tf.gather(b, keep, axis=0)
+print(d)

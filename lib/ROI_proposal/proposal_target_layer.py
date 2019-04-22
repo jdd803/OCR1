@@ -26,8 +26,13 @@ def proposal_target_layer(rpn_rois, gt_boxes, _num_classes):
     '''
     Make Python version of _proposal_target_layer_py below Tensorflow compatible
     '''
+    # rois, labels, bbox_targets, bbox_inside_weights, bbox_outside_weights, \
+    # keep_inds, fg_num = _proposal_target_layer_py(rpn_rois, gt_boxes, _num_classes)
+
     rois, labels, bbox_targets, bbox_inside_weights, bbox_outside_weights, \
-    keep_inds, fg_num = _proposal_target_layer_py(rpn_rois, gt_boxes,_num_classes)
+    keep_inds, fg_num = tf.py_function(_proposal_target_layer_py, [rpn_rois, gt_boxes, _num_classes],
+                                       [tf.float32, tf.int32, tf.float32, tf.float32,
+                                        tf.float32, tf.int32, tf.int32])
 
     rois = tf.reshape(rois, [-1, 5], name='rois')
     labels = tf.convert_to_tensor(value=tf.cast(labels, tf.int32), name='labels')
@@ -38,7 +43,6 @@ def proposal_target_layer(rpn_rois, gt_boxes, _num_classes):
     return rois, labels, bbox_targets, bbox_inside_weights, bbox_outside_weights, keep_inds, fg_num
 
 
-@tf.function
 def _proposal_target_layer_py(rpn_rois, gt_boxes, _num_classes):
     """
     Assign object detection proposals to ground-truth targets. Produces proposal
@@ -50,7 +54,7 @@ def _proposal_target_layer_py(rpn_rois, gt_boxes, _num_classes):
     all_rois = rpn_rois
 
     # Include ground-truth boxes in the set of candidate rois
-    zeros = np.zeros((gt_boxes.shape[0], 1), dtype=gt_boxes.dtype)
+    zeros = np.zeros((gt_boxes.shape[0], 1), dtype='int32')
     all_rois = np.vstack(
         (all_rois, np.hstack((zeros, gt_boxes[:, :-1])))
     )
@@ -60,7 +64,7 @@ def _proposal_target_layer_py(rpn_rois, gt_boxes, _num_classes):
         'Only single item batches are supported'
 
     num_images = 1
-    rois_per_image = cfg.TRAIN.BATCH_ROIS // num_images     #128
+    rois_per_image = cfg.TRAIN.BATCH_ROIS // num_images     # 128
     fg_rois_per_image = np.round(cfg.TRAIN.FG_FRACTION * rois_per_image).astype(np.int32)
 
     # Sample rois with classification labels and bounding box regression
@@ -126,10 +130,12 @@ def _sample_rois(all_rois, gt_boxes, fg_rois_per_image, rois_per_image, num_clas
     # overlaps: (rois x gt_boxes)
     overlaps = bbox_overlaps(
         np.ascontiguousarray(all_rois[:, 1:5], dtype=np.float),
-        np.ascontiguousarray(gt_boxes[:, :4], dtype=np.float))  #(n,k)overlaps
-    gt_assignment = overlaps.argmax(axis=1) #get the gtbox with max overlaps(n,1)
-    max_overlaps = overlaps.max(axis=1) #get the max overlaps
-    labels = gt_boxes[gt_assignment, 4] #(n,1)
+        np.ascontiguousarray(gt_boxes[:, :4], dtype=np.float))  # (n,k)overlaps
+    gt_assignment = overlaps.argmax(axis=1)  # get the gtbox with max overlaps(n,1)
+    max_overlaps = overlaps.max(axis=1)  # get the max overlaps
+    labels = tf.gather(gt_boxes, gt_assignment, axis=0)
+    labels = labels[:, 4]
+    # labels = gt_boxes[gt_assignment, 4]  # (n,1)
 
     # Select foreground RoIs as those with >= FG_THRESH overlap
     fg_inds = np.where(max_overlaps >= cfg.TRAIN.FG_THRESH)[0]
@@ -155,18 +161,25 @@ def _sample_rois(all_rois, gt_boxes, fg_rois_per_image, rois_per_image, num_clas
     keep_inds = np.append(fg_inds, bg_inds)
     # Select sampled values from various arrays:
     fg_num = len(fg_inds)
-    labels = labels[keep_inds]
+    # labels = labels[keep_inds]
+    labels = tf.gather(labels, keep_inds, axis=0)
 
     # Clamp labels for the background RoIs to 0
-
-    labels[fg_rois_per_this_image:] = 0
+    labels_fg = tf.cast(labels[:fg_rois_per_this_image], 'int32')
+    labels_bg = tf.zeros((labels[fg_rois_per_this_image:].shape[0],), dtype='int32')
+    labels = tf.concat((labels_fg, labels_bg), axis=-1)
+    # labels[fg_rois_per_this_image:] = 0
 
     rois = all_rois[keep_inds]
     # offset = offsets[keep_inds]
     # cls = cls_score[keep_inds]
 
+    # temp = gt_boxes[gt_assignment[keep_inds], :4]
+    temp = tf.gather(gt_boxes, gt_assignment[keep_inds])
+    temp1 = tf.cast(temp[:, :4], 'float32')
+
     bbox_target_data = _compute_targets(
-        rois[:, 1:5], gt_boxes[gt_assignment[keep_inds], :4], labels)   #(labels,targets)(n,5)
+        rois[:, 1:5], temp1, labels)   # (labels,targets)(n,5)
 
     bbox_targets, bbox_inside_weights = \
         _get_bbox_regression_labels(bbox_target_data, num_classes)
