@@ -9,8 +9,8 @@ import numpy as np
 import tensorflow as tf
 
 
-@tf.function
-def py_cpu_nms_v2(i,keep1,dets, thresh):
+# @tf.function
+def py_cpu_nms_v2(i, keep1, dets, thresh):
     """Pure Python NMS baseline."""
     x1 = dets[:, 0]
     y1 = dets[:, 1]
@@ -29,8 +29,8 @@ def py_cpu_nms_v2(i,keep1,dets, thresh):
     inter = w * h
     ovr = inter / (areas[i] + areas[:] - inter)
 
-    inds = np.where(ovr >= thresh and ovr < 1)[0]
+    inds = np.where((ovr >= thresh) & (ovr < 1))[0]
     keep = [val for val in inds if val not in keep1]
-    #keep = list(set(inds).difference(set(keep1)))
+    # keep = list(set(inds).difference(set(keep1)))
 
     return keep

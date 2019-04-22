@@ -10,5 +10,5 @@ def generate_mask(im_dims, gt_mask):
     return img
 
 
-def box_mask(box, mask):
-    return mask[:, :]
+def get_roi_mask(roi, mask):
+    return mask[roi[1]:roi[3], roi[0]:roi[2]]

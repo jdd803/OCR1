@@ -230,28 +230,22 @@ def model_part3(results):
     per_roi = per_roi[:, 1:]
     score = tf.reshape(results[2], (-1, 1))
     roi = tf.concat((per_roi, score), axis=-1)
-    # roi = tf.reshape(roi_item, (1, -1))
-    # for i in range(1, len(results)):
-    #     per_roi = results[str(i)]['roi']
-    #     score = results[str(i)]['cls_score']
-    #     roi_item = tf.concat((per_roi, score), axis=-1)
-    #     roi_item = tf.reshape(roi_item, (1, -1))
-    #     roi = tf.concat((roi, roi_item), axis=0)
 
     # apply nms on rois to get boxes with highest scores
     # keep = tf.py_function(nms, [roi, 0.3], tf.int32)
     # keep = nms(roi, 0.3)
     score = tf.reshape(results[2], (-1,))
-    keep = tf.image.non_max_suppression(per_roi, score, iou_threshold=0.3)
+    keep = tf.image.non_max_suppression(per_roi, score, max_output_size=20, iou_threshold=0.3)
 
+    ovr_threshold = tf.convert_to_tensor(0.5)
     for i in keep:
-        keep1 = nms1(i, keep, roi, 0.5)
+        keep1 = tf.numpy_function(nms1, [i, keep, roi, ovr_threshold], tf.int32)
         box_up_num = len(keep1) + 1
 
         # get an unsupressed box
-        mask_i = results[3][i]
-        roi_i = results[4][i]
-        score_i = results[2][i]
+        mask_i = results[3][i]  # (h,w,2)
+        roi_i = results[4][i]   # (n,4)
+        score_i = results[2][i]  # (n,)
         mask_i, roi_i = tf.py_function(mask_transform, [mask_i, roi_i], [tf.float32, tf.float32])
         mask_i = tf.pad(tensor=mask_i, paddings=[[roi_i[-4], 0], [roi_i[-3], 0], [0, 0]])
         mask_i *= score_i
@@ -297,6 +291,53 @@ def model_part3(results):
     return rois, cls, offset, roi_mask
 
 
+def model_part31(rois, cls_score):
+    ''' apply nms on the rois   '''
+    per_roi = rois
+    per_roi = per_roi[:, 1:]
+    score = tf.reshape(cls_score, (-1, 1))
+    roi = tf.concat((per_roi, score), axis=-1)
+
+    # apply nms on rois to get boxes with highest scores
+    # keep = tf.py_function(nms, [roi, 0.3], tf.int32)
+    # keep = nms(roi, 0.3)
+    score = tf.reshape(cls_score, (-1,))
+    keep = tf.image.non_max_suppression(per_roi, score, max_output_size=20, iou_threshold=0.3)
+    return keep
+
+
+def model_part3_2(roi, keep, i, mask, score):
+    ''' upsample and compute the mask '''
+    width = roi[keep[i]][2] - roi[keep[i]][0] + 1
+    height = roi[keep[i]][3] - roi[keep[i]][1] + 1
+    mask1 = tf.image.resize(mask[keep[i]], (height, width))
+    ovr_threshold = tf.convert_to_tensor(0.5)
+    keep1 = tf.numpy_function(nms1, [i, keep, roi, ovr_threshold], tf.int32)
+    box_up_num = len(keep1) + 1
+
+    mask_i = mask1  # (h,w,2)
+    roi_i = roi[keep[i]]  # (n,4)
+    score_i = score[keep[i]]  # (n,)
+    mask_i = tf.pad(tensor=mask_i, paddings=[[roi_i[-4], 0], [roi_i[-3], 0], [0, 0]])
+    mask_i *= score_i
+
+    # fuse the unsupressed box with supressed boxes by weighted averaging
+    for j in keep1:
+        roi_j = roi[j]
+        width_j = roi_j[2] - roi_j[0] + 1
+        height_j = roi_j[3] - roi_j[1] + 1
+        score_j = score[j]
+        mask_j = tf.image.resize(mask[j], (height_j, width_j))
+        rb = tf.maximum(roi_i[-2:], roi_j[-2:])
+        pad_rb = rb - roi_j[-2:]
+        mask_j = tf.pad(tensor=mask_j, paddings=[[roi_j[-4], pad_rb[0]], [roi_j[-3], pad_rb[1]], [0, 0]])
+        mask_i = mask_i + mask_j * score_j
+
+    mask_i /= box_up_num
+    mask = mask_i[roi_i[-4]:, roi_i[-3]:, :]
+    return mask
+
+
 def mask_transform(mask, roi):
     '''
     (k*k,n_points,2)->(height,width,2)
@@ -323,6 +364,6 @@ class MyModel(tf.keras.Model):
         """Run the model."""
         roi, ps_score, bbox_shift, rpn_cls_score, rpn_bbox_pred = model_part1(images=input, is_training=True)
         result = model_part2(imdims=(224, 224), rois=roi, ps_score_map=ps_score, bbox_shift=bbox_shift)
-        result_keep = model_part3(results=result)
-        return rpn_cls_score, rpn_bbox_pred, result_keep
+        keep = model_part31(result[4], result[2])
+        return result, rpn_cls_score, rpn_bbox_pred, keep
 

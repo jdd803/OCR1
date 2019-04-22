@@ -9,54 +9,12 @@ from tensorflow.python import keras
 import os
 from config import config as cfg
 from Model import *
-from data.ICDAR_mask import generate_mask,box_mask
+from data.ICDAR_mask import generate_mask, get_roi_mask
 from lib.loss.loss_function import *
 from lib.ROI_proposal.proposal_target_layer import proposal_target_layer
 from lib.RPN.anchor_target_layer import anchor_target_layer
 from lib.loss.loss_function import rpn_cls_loss, rpn_bbox_loss
 from load_data import next_batch
-
-
-def loss_fun(rois, cls, offset, roi_mask, img_mask, gt_boxes, rpn_cls_score, rpn_bbox_pred):
-    # get the rois which need to compute gradient
-    rois1, labels1, bbox_targets1, bbox_inside_weights1, bbox_outside_weights1, keep_inds, fg_num = proposal_target_layer(
-        rois, gt_boxes, cfg.dataset.NUM_CLASSES
-    )
-    cls_scores1 = cls[keep_inds]
-    preds1 = offset[keep_inds]
-
-    # get image's mask
-    im_shape = tf.shape(input=input_images)
-    im_dims = im_shape[1:3]
-    mask = tf.compat.v1.py_func(generate_mask, [im_dims, img_mask], tf.int32)
-
-    # compute every box's loss
-    # compute rpn_cls_loss and rpn_bbox_loss
-    rpn_labels, rpn_bbox_targets, rpn_bbox_inside_weights, rpn_bbox_outside_weights = \
-        anchor_target_layer(rpn_cls_score=rpn_cls_score, gt_boxes=gt_boxes, im_dims=im_dims,
-                            feat_stride=cfg.network.RPN_FEAT_STRIDE, anchor_scales=cfg.network.ANCHOR_SCALES)
-    loss1 = rpn_cls_loss(rpn_cls_score, rpn_labels)
-    loss2 = rpn_bbox_loss(rpn_bbox_pred, rpn_bbox_targets, rpn_bbox_inside_weights, rpn_bbox_outside_weights)
-
-    # compute all boxes' cls_loss
-    loss3 = rfcn_cls_loss(rfcn_cls_score=cls_scores1, labels=labels1)
-    # compute positive boxes' bbox_loss
-    loss4 = rfcn_bbox_loss(rfcn_bbox_pred=preds1, bbox_targets=bbox_targets1,
-                           roi_inside_weights=bbox_inside_weights1, roi_outside_weights=bbox_outside_weights1)
-    # compute positive boxes' mask_loss
-    mask_j = roi_mask[keep_inds[0]]  # (h,w,2)
-    mask_j = upsample_image(mask_j, rois[keep_inds[0]][2] - rois[keep_inds[0]][0],
-                            rois[keep_inds[0]][3] - rois[keep_inds[0]][1])
-    mask_label = box_mask(rois[keep_inds[0]], mask)
-    loss5 = mask_loss(rfcn_mask_score=mask_j, labels=mask_label)
-    for j in keep_inds[1:fg_num]:
-        mask_j = roi_mask[j]  # (h,w,2)
-        mask_j = upsample_image(mask_j, rois[j][2] - rois[j][0], rois[j][3] - rois[j][1])
-        mask_label = box_mask(rois[j], mask)
-        loss5 += mask_loss(rfcn_mask_score=mask_j, labels=mask_label)
-
-    total_loss = loss1 + loss2 + loss3 + loss4 + loss5
-    return total_loss
 
 
 def preprocess(img, gtbox, gtmask):
@@ -93,6 +51,43 @@ def preprocess(img, gtbox, gtmask):
     return img1, gtbox1, gtmask1
 
 
+def loss_mask(mask, roi, gtmask):
+    roi_gtmask = get_roi_mask(roi, gtmask)
+    loss = mask_loss(rfcn_mask_score=mask, labels=roi_gtmask)
+    return loss
+
+
+def loss_rpn(rpn_cls_score, rpn_bbox_pred, gt_boxes, img_dims):
+    rpn_labels, rpn_bbox_targets, rpn_bbox_inside_weights, rpn_bbox_outside_weights = \
+        anchor_target_layer(rpn_cls_score=rpn_cls_score, gt_boxes=gt_boxes, im_dims=img_dims,
+                            feat_stride=cfg.network.RPN_FEAT_STRIDE, anchor_scales=cfg.network.ANCHOR_SCALES)
+    loss1 = rpn_cls_loss(rpn_cls_score, rpn_labels)
+    loss2 = rpn_bbox_loss(rpn_bbox_pred, rpn_bbox_targets, rpn_bbox_inside_weights, rpn_bbox_outside_weights)
+    return loss1 + loss2
+
+
+def loss_cls_bbox(cls, offset, keep_inds, labels, bbox_targets, bbox_inside_weights, bbox_outside_weights):
+    # # get the rois which need to compute gradient
+    # rois1, labels1, bbox_targets1, bbox_inside_weights1, \
+    # bbox_outside_weights1, keep_inds, fg_num = proposal_target_layer(
+    #     rois, gt_boxes, cfg.dataset.NUM_CLASSES
+    # )
+    # cls_scores1 = cls[keep_inds]
+    # preds1 = offset[keep_inds]
+
+    cls_scores1 = cls[keep_inds]
+    preds1 = offset[keep_inds]
+
+    # compute all boxes' cls_loss
+    loss3 = rfcn_cls_loss(rfcn_cls_score=cls_scores1, labels=labels)
+    # compute positive boxes' bbox_loss
+    loss4 = rfcn_bbox_loss(rfcn_bbox_pred=preds1, bbox_targets=bbox_targets,
+                           roi_inside_weights=bbox_inside_weights, roi_outside_weights=bbox_outside_weights)
+
+    loss = loss3 + loss4
+    return loss
+
+
 def main():
     model = MyModel()
 
@@ -107,67 +102,48 @@ def main():
         gtbox0 = gtbox['1']
         gtmask0 = gtmask['1']
         img1, gtbox1, gtmask1 = preprocess(img0, gtbox0, gtmask0)
+        img_dims = images.shape[0:2]
+        img_mask = generate_mask(img_dims, gtmask1)
         images = image_mean_subtraction(img1)
         with tf.GradientTape() as t:
-            rpn_cls_score, rpn_bbox_pred, result_keep = model(images)
-            rois, cls, offset, roi_mask = result_keep[0], result_keep[1], result_keep[2], result_keep[3]
-            loss = loss_fun(rois, cls, offset, roi_mask, gtmask1, gtbox1, rpn_cls_score, rpn_bbox_pred)
-        grads = t.gradient(loss, model.trainable_variables)
+            result, rpn_cls_score, rpn_bbox_pred, keep = model(images)
+            roi_pred = result[4]
+            mask_pred = result[3]
+            cls_score = result[2]
+            cls_pred = result[0]
+            offset_pred = result[5]
+            roi_pred_keep = roi_pred[keep]
+            cls_score_keep = cls_score[keep]
+            cls_pred_keep = cls_pred[keep]
+            offset_pred_keep = offset_pred[keep]
+
+            rois1, labels1, bbox_targets1, bbox_inside_weights1, \
+            bbox_outside_weights1, keep_inds, fg_num = proposal_target_layer(
+                roi_pred_keep, gtbox1, cfg.dataset.NUM_CLASSES
+            )
+
+            rpn_loss = loss_rpn(rpn_cls_score, rpn_bbox_pred, gtbox1, img_dims)
+            rfcn_cls_bbox_loss = loss_cls_bbox(cls=cls_pred_keep, offset=offset_pred_keep, keep_inds=keep_inds,
+                                               labels=labels1, bbox_targets=bbox_targets1,
+                                               bbox_inside_weights=bbox_inside_weights1,
+                                               bbox_outside_weights=bbox_outside_weights1)
+            total_loss = rpn_loss + rfcn_cls_bbox_loss
+
+            for j in tf.range(fg_num):
+                mask1 = model_part3_2(roi_pred, keep, keep_inds[j], mask_pred, cls_score)
+                rfcn_mask_loss = loss_mask(mask1, roi_pred[keep[j]], img_mask)
+                total_loss = total_loss + rfcn_mask_loss
+
+            # cls, cls_result, cls_score, mask_result, rois, bbox = result[0], result[1], result[2], result[3],\
+            #                                                       result[4], result[5], result[6]
+            # rois, cls, offset, roi_mask = result_keep[0], result_keep[1], result_keep[2], result_keep[3]
+            # loss = loss_fun(rois, cls, offset, roi_mask, gtmask1, gtbox1, rpn_cls_score, rpn_bbox_pred)
+        grads = t.gradient(total_loss, model.trainable_variables)
         opt.apply_gradients(zip(grads, model.trainable_variables))
 
         if i % 10 == 0:
             print('Training loss (for one batch) at step %s: %s' % (i, float(loss)))
             print('Seen so far: %s samples' % ((i + 1) * 64))
-
-    # dog = cv2.imread('dog.jpeg')
-    # dog_mean = np.mean(dog, axis=0)
-    # x1 = tf.convert_to_tensor(value=dog, dtype=tf.float32)
-    # x2 = tf.convert_to_tensor([[0, 0, 18, 16, 1]])
-    roi, ps_score, bbox_shift, rpn_cls_score, rpn_bbox_pred = model_part1(images=input_images, is_training=True)
-    # cls, cls_result, cls_score, mask_result, rois, bbox = model_part2(imdims=(224, 224), rois=roi,
-    #                                                                   ps_score_map=ps_score, bbox_shift=bbox_shift)
-    result = model_part2(imdims=(224, 224), rois=roi, ps_score_map=ps_score, bbox_shift=bbox_shift)
-    result_keep = model_part3(results=result)
-
-    rois, cls, offset, roi_mask = result_keep[0], result_keep[1], result_keep[2], result_keep[3]
-    # get the rois which need to compute gradient
-    rois1, labels1, bbox_targets1, bbox_inside_weights1, bbox_outside_weights1, keep_inds, fg_num = proposal_target_layer(
-        rois, gt_boxes, cfg.dataset.NUM_CLASSES
-    )
-    cls_scores1 = cls[keep_inds]
-    preds1 = offset[keep_inds]
-
-    # get image's mask
-    im_shape = tf.shape(input=input_images)
-    im_dims = im_shape[1:3]
-    mask = tf.compat.v1.py_func(generate_mask, [im_dims, img_mask], tf.int32)
-
-    # compute every box's loss
-    # compute rpn_cls_loss and rpn_bbox_loss
-    rpn_labels, rpn_bbox_targets, rpn_bbox_inside_weights, rpn_bbox_outside_weights = \
-        anchor_target_layer(rpn_cls_score=rpn_cls_score, gt_boxes=gt_boxes, im_dims=im_dims,
-                            feat_stride=cfg.network.RPN_FEAT_STRIDE, anchor_scales=cfg.network.ANCHOR_SCALES)
-    loss1 = rpn_cls_loss(rpn_cls_score, rpn_labels)
-    loss2 = rpn_bbox_loss(rpn_bbox_pred, rpn_bbox_targets, rpn_bbox_inside_weights, rpn_bbox_outside_weights)
-
-    # compute all boxes' cls_loss
-    loss3 = rfcn_cls_loss(rfcn_cls_score=cls_scores1, labels=labels1)
-    # compute positive boxes' bbox_loss
-    loss4 = rfcn_bbox_loss(rfcn_bbox_pred=preds1, bbox_targets=bbox_targets1,
-                           roi_inside_weights=bbox_inside_weights1, roi_outside_weights=bbox_outside_weights1)
-    # compute positive boxes' mask_loss
-    mask_j = roi_mask[keep_inds[0]]  # (h,w,2)
-    mask_j = upsample_image(mask_j, rois[keep_inds[0]][2] - rois[keep_inds[0]][0],
-                            rois[keep_inds[0]][3] - rois[keep_inds[0]][1])
-    mask_label = box_mask(rois[keep_inds[0]], mask)
-    loss5 = mask_loss(rfcn_mask_score=mask_j, labels=mask_label)
-    for j in keep_inds[1:fg_num]:
-        mask_j = roi_mask[j]   # (h,w,2)
-        mask_j = upsample_image(mask_j, rois[j][2]-rois[j][0], rois[j][3]-rois[j][1])
-        mask_label = box_mask(rois[j], mask)
-        loss5 += mask_loss(rfcn_mask_score=mask_j, labels=mask_label)
-
-    total_loss = loss1 + loss2 + loss3 + loss4 + loss5
 
 
 if __name__ == "__main__":
