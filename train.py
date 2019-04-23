@@ -65,7 +65,7 @@ def loss_mask(mask, roi, gtmask):
 def loss_rpn(rpn_cls_score, rpn_bbox_pred, gt_boxes, img_dims):
     rpn_labels, rpn_bbox_targets, rpn_bbox_inside_weights, rpn_bbox_outside_weights = \
         anchor_target_layer(rpn_cls_score, gt_boxes, img_dims,
-                            cfg.network.RPN_FEAT_STRIDE, cfg.network.ANCHOR_SCALES)
+                            8, (2, 4, 8, 16))
     loss1 = rpn_cls_loss(rpn_cls_score, rpn_labels)
     loss2 = rpn_bbox_loss(rpn_bbox_pred, rpn_bbox_targets, rpn_bbox_inside_weights, rpn_bbox_outside_weights)
     return loss1 + loss2
@@ -122,12 +122,13 @@ def main():
             cls_pred_keep = tf.gather(cls_pred, keep, axis=0)
             offset_pred_keep = tf.gather(offset_pred, keep, axis=0)
 
+            rpn_loss = loss_rpn(rpn_cls_score, rpn_bbox_pred, gtbox1, img_dims)
+            # the keep rois in rois and gt_boxes
             rois1, labels1, bbox_targets1, bbox_inside_weights1, \
             bbox_outside_weights1, keep_inds, fg_num = proposal_target_layer(
-                roi_pred_keep, gtbox1, 1
+                roi_pred_keep, gtbox1, 2
             )
 
-            rpn_loss = loss_rpn(rpn_cls_score, rpn_bbox_pred, gtbox1, img_dims)
             rfcn_cls_bbox_loss = loss_cls_bbox(cls=cls_pred_keep, offset=offset_pred_keep, keep_inds=keep_inds,
                                                labels=labels1, bbox_targets=bbox_targets1,
                                                bbox_inside_weights=bbox_inside_weights1,
@@ -135,9 +136,12 @@ def main():
             total_loss = rpn_loss + rfcn_cls_bbox_loss
 
             for j in tf.range(fg_num):
-                mask1 = model_part3_2(roi_pred, keep, keep_inds[j], mask_pred, cls_score)
-                rfcn_mask_loss = loss_mask(mask1, roi_pred[keep[j]], img_mask)
-                total_loss = total_loss + rfcn_mask_loss
+                if keep_inds[j] < keep.shape[0]:
+                    mask1 = model_part3_2(roi_pred, keep, keep_inds[j], mask_pred, cls_score)
+                    rfcn_mask_loss = loss_mask(mask1, roi_pred[keep[j]], img_mask)
+                    total_loss = total_loss + rfcn_mask_loss
+                else:
+                    continue
 
             # cls, cls_result, cls_score, mask_result, rois, bbox = result[0], result[1], result[2], result[3],\
             #                                                       result[4], result[5], result[6]

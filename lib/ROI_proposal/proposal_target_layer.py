@@ -51,10 +51,10 @@ def _proposal_target_layer_py(rpn_rois, gt_boxes, _num_classes):
 
     # Proposal ROIs (0, x1, y1, x2, y2) coming from RPN
     # (i.e., rpn.proposal_layer.ProposalLayer), or any other source
-    all_rois = rpn_rois
+    all_rois = rpn_rois.numpy()
 
     # Include ground-truth boxes in the set of candidate rois
-    zeros = np.zeros((gt_boxes.shape[0], 1), dtype='int32')
+    zeros = np.zeros((gt_boxes.shape[0], 1), dtype='float32')
     all_rois = np.vstack(
         (all_rois, np.hstack((zeros, gt_boxes[:, :-1])))
     )
@@ -76,7 +76,7 @@ def _proposal_target_layer_py(rpn_rois, gt_boxes, _num_classes):
     rois = rois.reshape(-1, 5)
     # preds = preds.reshape(-1,4)
     # cls = cls.reshape(-1, _num_classes + 1)
-    labels = labels.reshape(-1, 1)
+    labels = tf.reshape(labels, (-1, 1))
     bbox_targets = bbox_targets.reshape(-1, _num_classes * 4)
     bbox_inside_weights = bbox_inside_weights.reshape(-1, _num_classes * 4)
 

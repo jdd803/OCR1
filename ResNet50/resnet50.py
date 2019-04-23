@@ -351,15 +351,16 @@ def ResNet50(include_top=False,
     x3 = x
 
     if include_top:
-        x = tf.python.keras.layers.GlobalAveragePooling2D(name='avg_pool')(x)
-        x = tf.python.keras.layers.Dense(classes, activation='softmax', name='fc1000')(x)
+        x = tf.keras.layers.GlobalAveragePooling2D(name='avg_pool')(x)
+        x = tf.keras.layers.Dense(classes, activation='softmax', name='fc1000')(x)
     else:
         if pooling == 'avg':
-            x = tf.python.keras.layers.GlobalAveragePooling2D()(x)
+            x = tf.keras.layers.GlobalAveragePooling2D()(x)
         elif pooling == 'max':
-            x = tf.python.keras.layers.GlobalMaxPooling2D()(x)
+            x = tf.keras.layers.GlobalMaxPooling2D()(x)
         else:
-            warnings.warn('The output shape of `ResNet50(include_top=False)` '
-                          'has been changed since Keras 2.2.0.')
+            pass
+            # warnings.warn('The output shape of `ResNet50(include_top=False)` '
+            #               'has been changed since Keras 2.2.0.')
 
     return x1, x2, x3

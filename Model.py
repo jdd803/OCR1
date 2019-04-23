@@ -306,7 +306,7 @@ def model_part31(rois, cls_score):
     # keep = tf.py_function(nms, [roi, 0.3], tf.int32)
     # keep = nms(roi, 0.3)
     score = tf.reshape(cls_score, (-1,))
-    keep = tf.image.non_max_suppression(per_roi, score, max_output_size=20, iou_threshold=0.3)
+    keep = tf.image.non_max_suppression(per_roi, score, max_output_size=300, iou_threshold=0.3)
     return keep
 
 
@@ -367,7 +367,8 @@ class MyModel(tf.keras.Model):
     def call(self, input):
         """Run the model."""
         roi, ps_score, bbox_shift, rpn_cls_score, rpn_bbox_pred = model_part1(images=input, is_training=True)
-        result = model_part2(imdims=(224, 224), rois=roi, ps_score_map=ps_score, bbox_shift=bbox_shift)
+        imdims = input.shape[0:2]
+        result = model_part2(imdims=imdims, rois=roi, ps_score_map=ps_score, bbox_shift=bbox_shift)
         keep = model_part31(result[4], result[2])
         return result, rpn_cls_score, rpn_bbox_pred, keep
 

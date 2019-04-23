@@ -114,7 +114,8 @@ def rfcn_bbox_loss(rfcn_bbox_pred, bbox_targets, roi_inside_weights, roi_outside
         diff_sL1 = smoothL1(diff, 1.0)
 
         # Only count loss for positive anchors
-        roi_bbox_reg = tf.reduce_mean(input_tensor=tf.reduce_sum(input_tensor=tf.multiply(roi_outside_weights, diff_sL1), axis=[1]))
+        roi_bbox_reg = tf.reduce_mean(input_tensor=tf.reduce_sum(input_tensor=tf.multiply(roi_outside_weights, diff_sL1),
+                                                                 axis=[1]))
 
         # Constant for weighting bounding box loss with classification loss
         roi_bbox_reg = 1 * roi_bbox_reg
