@@ -80,8 +80,8 @@ def loss_cls_bbox(cls, offset, keep_inds, labels, bbox_targets, bbox_inside_weig
     # cls_scores1 = cls[keep_inds]
     # preds1 = offset[keep_inds]
 
-    cls_scores1 = cls[keep_inds]
-    preds1 = offset[keep_inds]
+    cls_scores1 = tf.gather(cls, keep_inds, axis=0)
+    preds1 = tf.gather(offset, keep_inds, axis=0)
 
     # compute all boxes' cls_loss
     loss3 = rfcn_cls_loss(rfcn_cls_score=cls_scores1, labels=labels)
@@ -95,7 +95,7 @@ def loss_cls_bbox(cls, offset, keep_inds, labels, bbox_targets, bbox_inside_weig
 
 def main():
     model = MyModel()
-
+    # model.summary()
     opt = keras.optimizers.Adam(lr=0.001)
     checkpoint_dir = 'path/to/model_dir'
     if not os.path.exists(checkpoint_dir):
@@ -112,6 +112,7 @@ def main():
         images = image_mean_subtraction(img1)
         with tf.GradientTape() as t:
             result, rpn_cls_score, rpn_bbox_pred, keep = model(images)
+            model.summary()
             roi_pred = result[4]
             mask_pred = result[3]
             cls_score = result[2]
@@ -126,7 +127,7 @@ def main():
             # the keep rois in rois and gt_boxes
             rois1, labels1, bbox_targets1, bbox_inside_weights1, \
             bbox_outside_weights1, keep_inds, fg_num = proposal_target_layer(
-                roi_pred_keep, gtbox1, 2
+                roi_pred_keep, gtbox1, 1
             )
 
             rfcn_cls_bbox_loss = loss_cls_bbox(cls=cls_pred_keep, offset=offset_pred_keep, keep_inds=keep_inds,

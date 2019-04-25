@@ -54,10 +54,10 @@ def _proposal_target_layer_py(rpn_rois, gt_boxes, _num_classes):
     all_rois = rpn_rois.numpy()
 
     # Include ground-truth boxes in the set of candidate rois
-    zeros = np.zeros((gt_boxes.shape[0], 1), dtype='float32')
-    all_rois = np.vstack(
-        (all_rois, np.hstack((zeros, gt_boxes[:, :-1])))
-    )
+    # zeros = np.zeros((gt_boxes.shape[0], 1), dtype='float32')
+    # all_rois = np.vstack(
+    #     (all_rois, np.hstack((zeros, gt_boxes[:, :-1])))
+    # )
 
     # Sanity check: single batch only
     assert np.all(all_rois[:, 0] == 0), \
@@ -77,9 +77,12 @@ def _proposal_target_layer_py(rpn_rois, gt_boxes, _num_classes):
     # preds = preds.reshape(-1,4)
     # cls = cls.reshape(-1, _num_classes + 1)
     labels = tf.reshape(labels, (-1, 1))
-    bbox_targets = bbox_targets.reshape(-1, _num_classes * 4)
-    bbox_inside_weights = bbox_inside_weights.reshape(-1, _num_classes * 4)
+    # bbox_targets = bbox_targets.reshape(-1, _num_classes * 4)
+    # bbox_inside_weights = bbox_inside_weights.reshape(-1, _num_classes * 4)
+    # bbox_outside_weights = np.array(bbox_inside_weights > 0).astype(np.float32)
 
+    bbox_targets = bbox_targets.reshape(-1, 4)
+    bbox_inside_weights = bbox_inside_weights.reshape(-1, 4)
     bbox_outside_weights = np.array(bbox_inside_weights > 0).astype(np.float32)
 
     return np.float32(rois), labels, bbox_targets, bbox_inside_weights, bbox_outside_weights, keep_inds, fg_nums
@@ -95,15 +98,18 @@ def _get_bbox_regression_labels(bbox_target_data, num_classes):
         bbox_inside_weights (ndarray): N x 4K blob of loss weights
     """
     clss = bbox_target_data[:, 0]
-    bbox_targets = np.zeros((clss.size, 4 * num_classes), dtype=np.float32)
+    # bbox_targets = np.zeros((clss.size, 4 * num_classes), dtype=np.float32)
+    bbox_targets = np.zeros((clss.size, 4), dtype=np.float32)
     bbox_inside_weights = np.zeros(bbox_targets.shape, dtype=np.float32)
     inds = np.where(clss > 0)[0]
     for ind in inds:
         cls = clss[ind]
         start = int(4 * cls)
         end = start + 4
-        bbox_targets[ind, start:end] = bbox_target_data[ind, 1:]
-        bbox_inside_weights[ind, start:end] = (1, 1, 1, 1)
+        # bbox_targets[ind, start:end] = bbox_target_data[ind, 1:]
+        # bbox_inside_weights[ind, start:end] = (1, 1, 1, 1)
+        bbox_targets[ind, 0:4] = bbox_target_data[ind, 1:]
+        bbox_inside_weights[ind, 0:4] = (1, 1, 1, 1)
     return bbox_targets, bbox_inside_weights
 
 

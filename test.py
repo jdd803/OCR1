@@ -1,11 +1,23 @@
 import tensorflow as tf
+from tensorflow.python import keras
 import numpy as np
 
-a = tf.range(16)
-b = a + 2
-print(b)
-b[0] = 0
-print(b)
-keep = tf.convert_to_tensor([0, 2, 3])
-d = tf.gather(b, keep, axis=0)
-print(d)
+
+class Dog(keras.layers.Layer):
+    def __init__(self):
+        super(Dog, self).__init__()
+
+    def call(self, inputs, **kwargs):
+        a, b = inputs
+        self.result = a + b
+
+    def get_result(self):
+        return self.result
+
+dog = Dog()
+a = tf.reshape(tf.range(4), (2, 2))
+a = tf.cast(a, 'float32')
+b = tf.ones((2, 2))
+dog([a, b])
+result = dog.get_result()
+print(result)

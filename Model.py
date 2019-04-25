@@ -32,7 +32,8 @@ def image_mean_subtraction(images, means=[123.68,116.78,103.94]):
 
 
 def upsample_image(images, y1, y2):
-    return tf.compat.v1.image.resize_bilinear(images, size=[y1, y2])
+    return tf.image.resize(images, size=[y1, y2])
+    # return tf.compat.v1.image.resize_bilinear(images, size=[y1, y2])
 
 
 def model_part1(images, is_training=True):
