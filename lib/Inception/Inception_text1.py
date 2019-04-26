@@ -76,7 +76,7 @@ class InceptionTextLayer(keras.layers.Layer):
         conv_concat = tf.concat([conv11_out, conv33_out, conv55_out], 3)
         print("Inception_conv_concat:" + str(conv_concat.shape))
         conv_concat_conv = self.conv5(conv_concat)  # (batch,16,16,256)
-        temp = self.add1(conv_concat_conv, conv_shortcut)
+        temp = self.add1([conv_concat_conv, conv_shortcut])
         last_result = self.ac1(temp)
         print("Inception_last_result:" + str(last_result.shape))
 

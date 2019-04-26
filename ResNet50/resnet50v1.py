@@ -33,7 +33,7 @@ class IdentityBlock(keras.layers.Layer):
         self.bn1 = tf.keras.layers.BatchNormalization(axis=bn_axis, name=bn_name_base + '2a')
         self.ac1 = tf.keras.layers.Activation('relu')
 
-        self.conv2 = tf.keras.layers.Conv2D(self.filters2, kernel_size,
+        self.conv2 = tf.keras.layers.Conv2D(self.filters2, self.kernel_size,
                                             padding='same',
                                             kernel_initializer='TruncatedNormal',
                                             name=conv_name_base + '2b')
@@ -57,7 +57,7 @@ class IdentityBlock(keras.layers.Layer):
         x = self.ac2(x)
         x = self.conv3(x)
         x = self.bn3(x)
-        x = self.add1(x, inputs)
+        x = self.add1([x, inputs])
         x = self.ac3(x)
         return x
 
@@ -65,7 +65,7 @@ class IdentityBlock(keras.layers.Layer):
 class ConvBlock(keras.layers.Layer):
     def __init__(self, kernel_size, filters, stage, block, strides=(2, 2)):
         super(ConvBlock, self).__init__()
-        self.kernel.size = kernel_size
+        self.kernel_size = kernel_size
         self.filters1, self.filters2, self.filters3 = filters
         self.stage = stage
         self.block = block
@@ -79,7 +79,7 @@ class ConvBlock(keras.layers.Layer):
         self.bn1 = tf.keras.layers.BatchNormalization(axis=bn_axis, name=bn_name_base + '2a')
         self.ac1 = tf.keras.layers.Activation('relu')
 
-        self.conv2 = tf.keras.layers.Conv2D(self.filters2, kernel_size, padding='same',
+        self.conv2 = tf.keras.layers.Conv2D(self.filters2, self.kernel_size, padding='same',
                                             kernel_initializer='TruncatedNormal',
                                             name=conv_name_base + '2b')
         self.bn2 = tf.keras.layers.BatchNormalization(axis=bn_axis, name=bn_name_base + '2b')
@@ -133,7 +133,7 @@ class IdentityBlock1(keras.layers.Layer):
         self.bn1 = tf.keras.layers.BatchNormalization(axis=bn_axis, name=bn_name_base + '2a')
         self.ac1 = tf.keras.layers.Activation('relu')
 
-        self.conv2 = tf.keras.layers.Conv2D(self.filters2, kernel_size,
+        self.conv2 = tf.keras.layers.Conv2D(self.filters2, self.kernel_size,
                                             padding='same', dilation_rate=2,
                                             kernel_initializer='TruncatedNormal',
                                             name=conv_name_base + '2b')
@@ -157,15 +157,15 @@ class IdentityBlock1(keras.layers.Layer):
         x = self.ac2(x)
         x = self.conv3(x)
         x = self.bn3(x)
-        x = self.add1(x, inputs)
+        x = self.add1([x, inputs])
         x = self.ac3(x)
         return x
 
 
 class ConvBlock1(keras.layers.Layer):
-    def __init__(self, kernel_size, filters, stage, block, strides=(2, 2)):
+    def __init__(self, kernel_size, filters, stage, block, strides=(1, 1)):
         super(ConvBlock1, self).__init__()
-        self.kernel.size = kernel_size
+        self.kernel_size = kernel_size
         self.filters1, self.filters2, self.filters3 = filters
         self.stage = stage
         self.block = block
@@ -222,8 +222,8 @@ class ConvBlock1(keras.layers.Layer):
 class ResNet50(keras.Model):
     def __init__(self, weights=None, input_shape=None, pooling=None):
         super(ResNet50, self).__init__()
-        self.weights = weights
-        self.input_shape = input_shape
+        self.weights1 = weights
+        self.input_shape1 = input_shape
         self.pooling = pooling
         bn_axis = 3
         self.pad1 = tf.keras.layers.ZeroPadding2D(padding=(3, 3), name='conv1_pad')

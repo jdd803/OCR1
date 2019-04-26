@@ -7,7 +7,6 @@ from lib.bbox.bbox_transform import bbox_transform_inv_tf, clip_boxes_tf
 from lib.Inception.Inception_text1 import InceptionTextLayer
 from lib.RPN.rpn1 import RPN
 from lib.ROI_proposal.roi_proposal1 import RoiProposal
-from lib.ROI_proposal.proposal_target_layer import proposal_target_layer
 from lib.deform_psroi_pooling.layer1 import PsRoiOffset
 from lib.nms.nms_v2 import py_cpu_nms_v2 as nms1
 
@@ -36,14 +35,13 @@ def upsample_image(images, y1, y2):
 
 
 class ModelPart1(keras.Model):
-    def __init__(self, img_dims, is_training=True, gtboxes=None):
+    def __init__(self, img_dims, is_training=True):
         super(ModelPart1, self).__init__()
         self.training = is_training
-        self.gtboxes = gtboxes
         self.img_dims = img_dims
         self.feat_stride = 8
         self.num_classes = cfg.dataset.NUM_CLASSES
-        self.resnet50 = ResNet50()
+        self.resnet50 = ResNet50(weights=None, input_shape=None, pooling=None)
         self.num_outputs = 1024
         self.conv1 = tf.keras.layers.Conv2D(filters=self.num_outputs, kernel_size=(1, 1),
                                             activation='relu', kernel_initializer='TruncatedNormal')
@@ -74,14 +72,14 @@ class ModelPart1(keras.Model):
         print("Shape of stage3's feature:" + str(f_stage3.shape))
         f_stage4 = upsample_image(fea4, f_stage3.shape[1], f_stage3.shape[2])
         print("Shape of upsampled stage4's feature:" + str(f_stage4.shape))
-        fused_fea1 = self.add1(f_stage3, f_stage4)
+        fused_fea1 = self.add1([f_stage3, f_stage4])
         print("fused_fea1's shape:" + str(fused_fea1.shape))
 
         f_stage5_1 = self.conv2(fea5)
         f_stage5_1 = self.bn2(f_stage5_1)
         f_stage5_2 = upsample_image(f_stage5_1, f_stage3.shape[1], f_stage3.shape[2])
         print("Shape of upsampled stage5's feature:" + str(f_stage5_2.shape))
-        fused_fea2 = self.add2(f_stage3, f_stage5_2)
+        fused_fea2 = self.add2([f_stage3, f_stage5_2])
         print("fused_fea2's shape:" + str(fused_fea2.shape))
 
         # Inception_text
@@ -99,246 +97,93 @@ class ModelPart1(keras.Model):
 
 
 class ModelPart21(keras.Model):
-    def __init__(self, feat_stride, pool_size, pool):
-
+    def __init__(self):
+        super(ModelPart21, self).__init__()
+        self.pool_size = cfg.network.PSROI_BINS
+        self.pool = False
+        self.feat_stride = 8
+        self.ps_roi_pooling = PsRoiOffset(self.pool_size, self.pool, self.feat_stride)
         pass
 
     def call(self, inputs):
-        pass
+        roi, ps_score_map = inputs
+        ps_roi_layer1 = self.ps_roi_pooling([ps_score_map, roi])  # (n,2*2,k,k)
+        ps_roi_layer1_shape = tf.shape(input=ps_roi_layer1)
+        mask_cls = tf.reshape(ps_roi_layer1, (ps_roi_layer1_shape[0], cfg.dataset.NUM_CLASSES + 1, 2,
+                                              ps_roi_layer1_shape[2], ps_roi_layer1_shape[3]))  # (n,2,2,k,k)
+        mask_cls = tf.transpose(a=mask_cls, perm=(0, 2, 3, 4, 1))  # (n,class,h,w,inside/outside)(n,2,k,k,2)
+        mask = tf.nn.softmax(mask_cls, axis=-1)  # (n,class,h,w,inside/outside)(n,2,k,k,2)
 
+        cls_max = tf.reduce_max(input_tensor=mask_cls, axis=-1)  # (n,class,k,k)
+        cls_max_r = tf.reshape(cls_max, (ps_roi_layer1_shape[0],
+                                         cfg.dataset.NUM_CLASSES + 1, -1))  # (n,class,k*k)
+        cls_ave = tf.reduce_mean(input_tensor=cls_max_r, axis=-1)  # (n,class)
 
-def model_part2_1(roi, ps_score_map):
-    '''
-    deal per_roi on ps_score_map
-    :param roi: per_roi(1,5)
-    :param ps_score_map:
-    :return:mask score,classify score
-    '''
-    # rois = roi.get_rois()
-    ps_roi_layer1 = PS_roi_offset(ps_score_map, roi,
-                                  pool_size=cfg.network.PSROI_BINS, pool=False,
-                                  feat_stride=8).call(ps_score_map)  # (2*2,h,w)
-    # roi_num = tf.shape(rois)[0]
-    ps_roi_layer1_shape = tf.shape(input=ps_roi_layer1)
-    mask_cls = tf.reshape(ps_roi_layer1, (cfg.dataset.NUM_CLASSES+1, 2,
-                                          ps_roi_layer1_shape[-2], ps_roi_layer1_shape[-1]))
-    # (2,2,h,w)(inside/outside,class,h,w)
+        cls = tf.nn.softmax(cls_ave, axis=-1)       # (n,c)
+        cls_result = tf.argmax(input=cls, axis=-1)  # (n,)
+        cls_score = tf.reduce_max(cls, axis=-1)     # (n,)
 
-    # mask_cls = tf.reshape(ps_roi_layer1,(cfg.network.PSROI_BINS*cfg.network.PSROI_BINS,2,2,-1))  #(49,2,2,n_points)
+        # (n,2,k,k,2)->(n,k,k,2)
+        mask_ind = tf.reshape(tf.range(ps_roi_layer1_shape[0]), (-1, 1))
+        cls_result = tf.cast(tf.reshape(cls_result, (-1, 1)), tf.int32)
+        indices = tf.concat((mask_ind, cls_result), axis=-1)
+        mask_result = tf.gather_nd(mask, indices=indices)
 
-    mask_cls = tf.transpose(a=mask_cls, perm=(1, 2, 3, 0))   # (class,h,w,inside/outside)(2,h,w,2)
-    mask = tf.nn.softmax(mask_cls, axis=-1)   # (class,h,w,inside/outside)(2,h,w,2)
-
-    cls_max = tf.reduce_max(input_tensor=mask_cls, axis=-1)   # (class,h,w)
-    cls_max_r = tf.reshape(cls_max, (cfg.dataset.NUM_CLASSES+1, -1))  # (class,h*w)
-    # cls_max_t = tf.transpose(cls_max,(0,2,1,3))   #(2,49,n_points)--(classes,bins,pixel_max)
-    # cls_max_r = tf.reshape(cls_max_t,(2,-1))   #(2,49*n_points)--(classes,bins*pixel_max)
-    cls_ave = tf.reduce_mean(input_tensor=cls_max_r, axis=-1)   # (2,)
-
-    cls = tf.nn.softmax(cls_ave)
-    cls_result = tf.argmax(input=cls, axis=0)    # (n,)
-    cls_score = tf.reduce_max(cls, axis=-1)
-
-    mask_result = mask[cls_result]  # (h,w,inside/outside)(h,w,2)
-    mask_result = tf.expand_dims(mask_result, axis=0)
-
-    return cls, cls_result, cls_score, mask_result   # (2,1,(h,w,2))
-
-
-def model_part2_11(roi, ps_score_map):
-    '''
-    deal per_roi on ps_score_map
-    :param roi: per_roi(n,5)
-    :param ps_score_map:
-    :return:mask score,classify score
-    '''
-    # rois = roi.get_rois()
-    ps_roi_layer1 = PS_roi_offset(ps_score_map, roi,
-                                  pool_size=cfg.network.PSROI_BINS, pool=False,
-                                  feat_stride=8).call(ps_score_map)  # (2*2,h,w)
-    # roi_num = tf.shape(rois)[0]
-    ps_roi_layer1_shape = tf.shape(input=ps_roi_layer1)
-    mask_cls = tf.reshape(ps_roi_layer1, (cfg.dataset.NUM_CLASSES+1, 2,
-                                          ps_roi_layer1_shape[-2], ps_roi_layer1_shape[-1]))
-    # (2,2,h,w)(inside/outside,class,h,w)
-
-    # mask_cls = tf.reshape(ps_roi_layer1,(cfg.network.PSROI_BINS*cfg.network.PSROI_BINS,2,2,-1))  #(49,2,2,n_points)
-
-    mask_cls = tf.transpose(a=mask_cls, perm=(1, 2, 3, 0))   # (class,h,w,inside/outside)(2,h,w,2)
-    mask = tf.nn.softmax(mask_cls, axis=-1)   # (class,h,w,inside/outside)(2,h,w,2)
-
-    cls_max = tf.reduce_max(input_tensor=mask_cls, axis=-1)   # (class,h,w)
-    cls_max_r = tf.reshape(cls_max, (cfg.dataset.NUM_CLASSES+1, -1))  # (class,h*w)
-    # cls_max_t = tf.transpose(cls_max,(0,2,1,3))   #(2,49,n_points)--(classes,bins,pixel_max)
-    # cls_max_r = tf.reshape(cls_max_t,(2,-1))   #(2,49*n_points)--(classes,bins*pixel_max)
-    cls_ave = tf.reduce_mean(input_tensor=cls_max_r, axis=-1)   # (2,)
-
-    cls = tf.nn.softmax(cls_ave)
-    cls_result = tf.argmax(input=cls, axis=0)    # (n,)
-    cls_score = tf.reduce_max(cls, axis=-1)
-
-    mask_result = mask[cls_result]  # (h,w,inside/outside)(h,w,2)
-    mask_result = tf.expand_dims(mask_result, axis=0)
-
-    return cls, cls_result, cls_score, mask_result   # (2,1,(1,h,w,2))
+        return cls, cls_result, cls_score, mask_result  # ((n,c),n,n,(n,k,k,2))
 
 
 class ModelPart22(keras.Model):
-    def __init__(self, ps_filters, pool_size, pool, feat_stride):
-        self.filters = ps_filters
-        self.pool_size = pool_size
-        self.pool = pool
-        self.feat_stride = feat_stride
-        self.ps_roi_pooling = PsRoiOffset(self.filters, self.pool_size, self.pool, self.feat_stride)
+    def __init__(self):
+        super(ModelPart22, self).__init__()
+        self.pool_size = cfg.network.PSROI_BINS
+        self.pool = True
+        self.feat_stride = 8
+        self.ps_roi_pooling = PsRoiOffset(self.pool_size, self.pool, self.feat_stride)
 
     def call(self, inputs):
         roi, bbox_shift = inputs
-        ps_roi_layer2 = self.ps_roi_pooling([bbox_shift, roi])  # (4,k,k)
-        bbox = tf.reshape(ps_roi_layer2, (4, cfg.network.PSROI_BINS * cfg.network.PSROI_BINS))  # (4,k*k)
-        bbox = tf.reduce_mean(input_tensor=bbox, axis=1)  # (4)
+        ps_roi_layer2 = self.ps_roi_pooling([bbox_shift, roi])  # (n,4,k,k)
+        bbox = tf.reshape(ps_roi_layer2, (-1, 4, cfg.network.PSROI_BINS * cfg.network.PSROI_BINS))  # (n,4,k*k)
+        bbox = tf.reduce_mean(input_tensor=bbox, axis=-1)  # (n,4)
         return bbox
 
 
-def model_part2_2(roi, bbox_shift):
-    '''
-    get bbox shift
-    :param roi:
-    :param bbox_shift:
-    :return:
-    '''
-    # rois = roi.get_rois()
-    ps_roi_layer2 = PS_roi_offset(bbox_shift, roi,
-                                  pool_size=cfg.network.PSROI_BINS, pool=True,
-                                  feat_stride=8).call(bbox_shift)  # (4,k,k)
-    # roi_num = tf.shape(rois)[0]
-    bbox = tf.reshape(ps_roi_layer2, (4, cfg.network.PSROI_BINS*cfg.network.PSROI_BINS))  # (4,k*k)
-    bbox = tf.reduce_mean(input_tensor=bbox, axis=1)  # (4)
-    return bbox
+class ModelPart2(keras.Model):
+    def __init__(self, img_dims):
+        super(ModelPart2, self).__init__()
+        self.img_dims = img_dims
+        self.model22 = ModelPart22()
+        self.model21 = ModelPart21()
+        pass
+
+    def call(self, inputs, training=None, mask=None):
+        rois, ps_score_map, bbox_shift = inputs
+        offsets = self.model22([rois, bbox_shift])
+        proposals = bbox_transform_inv_tf(rois[:, -4:], offsets)
+        proposals = clip_boxes_tf(proposals, self.img_dims)  # (n, 4)
+        zero = tf.zeros((proposals.shape[0], 1))
+        proposals = tf.concat((zero, proposals), axis=-1)
+        # rois = tf.concat((rois, proposals), axis=0)  # (2n, 4)
+        #
+        # bbox = self.model22([rois, bbox_shift])
+        cls, cls_result, cls_score, mask_result = self.model21([proposals, ps_score_map])
+
+        return cls, cls_result, cls_score, mask_result, rois, offsets
 
 
-def model_part2(imdims, rois, ps_score_map, bbox_shift):
-    '''
-    compute rois' cls_score and mask_score,apply nms on rois by their scores
-    :param imdims:
-    :param rois:
-    :param ps_score_map:
-    :param bbox_shift:
-    :return:
-    '''
-    offsets = tf.map_fn(lambda x: model_part2_2(x, bbox_shift), rois)  # (n, 4)
-    proposals = bbox_transform_inv_tf(rois[:, -4:], offsets)  # (n, 4)
-    proposals = clip_boxes_tf(proposals, imdims)  # (n, 4)
-    zero = tf.zeros((proposals.shape[0], 1))
-    proposals = tf.concat((zero, proposals), axis=-1)
-    rois = tf.concat((rois, proposals), axis=0)   # (2n, 4)
+class ModelPart31(keras.layers.Layer):
+    def __init__(self):
+        super(ModelPart31, self).__init__()
 
-    bbox = model_part2_2(rois[0], bbox_shift)
-    bbox = tf.reshape(bbox, (1, -1))
-    cls, cls_result, cls_score, mask_result = model_part2_1(rois[0], ps_score_map)
-    cls = tf.reshape(cls, (1, -1))
-    cls_result = tf.reshape(cls_result, (1,))
-    cls_score = tf.reshape(cls_score, (1,))
+    def call(self, inputs, **kwargs):
+        rois, cls_score = inputs
+        per_roi = rois[:, 1:]
+        score = tf.reshape(cls_score, (-1, 1))
 
-    for i in tf.range(1, rois.shape[0]):
-        bbox1 = model_part2_2(rois[i], bbox_shift)
-        bbox1 = tf.reshape(bbox1, (1, -1))
-        cls1, cls_result1, cls_score1, mask_result1 = model_part2_1(rois[i], ps_score_map)
-        cls1 = tf.reshape(cls1, (1, -1))
-        cls = tf.concat((cls, cls1), axis=0)
-        cls_result1 = tf.reshape(cls_result1, (1,))
-        cls_score1 = tf.reshape(cls_score1, (1,))
-        cls_result = tf.concat((cls_result, cls_result1), axis=0)
-        cls_score = tf.concat((cls_score, cls_score1), axis=0)
-        mask_result = tf.concat((mask_result, mask_result1), axis=0)
-        bbox = tf.concat((bbox, bbox1), axis=0)
-
-    return cls, cls_result, cls_score, mask_result, rois, bbox
-
-
-def model_part3(results):
-    '''
-    apply nms on the rois
-    :param results:
-    :return:
-    '''
-    per_roi = results[4]
-    per_roi = per_roi[:, 1:]
-    score = tf.reshape(results[2], (-1, 1))
-    roi = tf.concat((per_roi, score), axis=-1)
-
-    # apply nms on rois to get boxes with highest scores
-    # keep = tf.py_function(nms, [roi, 0.3], tf.int32)
-    # keep = nms(roi, 0.3)
-    score = tf.reshape(results[2], (-1,))
-    keep = tf.image.non_max_suppression(per_roi, score, max_output_size=20, iou_threshold=0.3)
-
-    ovr_threshold = tf.convert_to_tensor(0.5)
-    for i in keep:
-        keep1 = tf.numpy_function(nms1, [i, keep, roi, ovr_threshold], tf.int32)
-        box_up_num = len(keep1) + 1
-
-        # get an unsupressed box
-        mask_i = results[3][i]  # (h,w,2)
-        roi_i = results[4][i]   # (n,4)
-        score_i = results[2][i]  # (n,)
-        mask_i, roi_i = tf.py_function(mask_transform, [mask_i, roi_i], [tf.float32, tf.float32])
-        mask_i = tf.pad(tensor=mask_i, paddings=[[roi_i[-4], 0], [roi_i[-3], 0], [0, 0]])
-        mask_i *= score_i
-
-        # fuse the unsupressed box with supressed boxes by weighted averaging
-        for j in keep1:
-            mask_j = results[3][j]
-            roi_j = results[4][j]
-            score_j = results[3][j]
-            mask_j, roi_j = tf.py_function(mask_transform, [mask_j, roi_j], [tf.float32, tf.float32])
-            rb = tf.maximum(roi_i[-2:], roi_j[-2:])
-            pad_rb = rb - roi_j[-2:]
-            mask_j = tf.pad(tensor=mask_j, paddings=[[roi_j[-4], pad_rb[0]], [roi_j[-3], pad_rb[1]], [0, 0]])
-            mask_i = mask_i + mask_j*score_j
-        mask_i /= box_up_num
-        mask = mask_i[roi_i[-4]:, roi_i[-3]:, :]
-        results[3][i] = mask
-
-    # compute the postive boxes and positive boxes
-    # compute the boxes' inside_weights and out_side weights
-    roi_item = result[4][keep[0]]  # (4,)
-    offset_item = result[5][keep[0]]  # (4,)
-    cls_item = result[0][keep[0]]
-    rois = tf.reshape(roi_item, (1, -1))
-    offset = tf.reshape(offset_item, (1, -1))
-    cls = tf.reshape(cls_item, (1, -1))
-    roi_mask_item = result[3][keep[0]]
-    roi_mask = tf.reshape(roi_mask_item, (1, 5, 5, 2))
-    for i in range(1, len(keep)):
-        roi_item = result[4][keep[i]]
-        roi_item = tf.reshape(roi_item, (1, -1))
-        rois = tf.concat((rois, roi_item), axis=0)  # (n,4)
-        offset_item = result[5][keep[i]]
-        offset_item = tf.reshape(offset_item, (1, -1))
-        offset = tf.concat((offset, offset_item), axis=0)  # (n,4)
-        cls_item = result[0][keep[i]]
-        cls_item = tf.reshape(cls_item, (1, -1))
-        cls = tf.concat((cls, cls_item), axis=0)  # (n,k+1)
-        roi_mask_item = result[3][keep[i]]
-        roi_mask_item = tf.reshape(roi_mask_item, (1, 5, 5, 2))
-        roi_mask = tf.concat((roi_mask, roi_mask_item), axis=0)
-
-    return rois, cls, offset, roi_mask
-
-
-def model_part31(rois, cls_score):
-    ''' apply nms on the rois   '''
-    per_roi = rois
-    per_roi = per_roi[:, 1:]
-    score = tf.reshape(cls_score, (-1, 1))
-    roi = tf.concat((per_roi, score), axis=-1)
-
-    # apply nms on rois to get boxes with highest scores
-    # keep = tf.py_function(nms, [roi, 0.3], tf.int32)
-    # keep = nms(roi, 0.3)
-    score = tf.reshape(cls_score, (-1,))
-    keep = tf.image.non_max_suppression(per_roi, score, max_output_size=300, iou_threshold=0.3)
-    return keep
+        # apply nms on rois to get boxes with highest scores
+        score = tf.reshape(cls_score, (-1,))
+        keep = tf.image.non_max_suppression(per_roi, score, max_output_size=300, iou_threshold=0.3)
+        return keep
 
 
 def model_part3_2(roi, keep, i, mask, score):
@@ -373,38 +218,20 @@ def model_part3_2(roi, keep, i, mask, score):
     return mask
 
 
-def mask_transform(mask, roi):
-    '''
-    (k*k,n_points,2)->(height,width,2)
-    :param mask: (k*k,n_points,2)
-    :param roi:
-    :return:
-    '''
-    feature_boxes = np.round(roi / 8)
-    feature_boxes[:, -2:] -= 1
-    width = (feature_boxes[:, 3] - feature_boxes[:, 1] + 1)  # (n,1)
-    height = (feature_boxes[:, 4] - feature_boxes[:, 2] + 1)  # (n,1)
-    mask1 = np.reshape(mask, (cfg.network.PSROI_BINS, cfg.network.PSROI_BINS, -1, 2))
-    mask2 = np.split(mask1, cfg.network.PSROI_BINS, axis=2)
-    mask3 = np.stack(mask2, axis=1)
-    mask4 = np.reshape(mask3, (height, width, 2))
-    return mask4, feature_boxes
-
-
 class MyModel(tf.keras.Model):
-    def __init__(self, img_dims, training=True, gtboxes=None):
+    def __init__(self, img_dims, training=True):
         super(MyModel, self).__init__()
         self.img_dims = img_dims
         self.training = training
-        self.gtboxes = gtboxes
-        self.model1 = ModelPart1(img_dims, training, gtboxes)
+        self.model1 = ModelPart1(img_dims, training)
+        self.model2 = ModelPart2(img_dims)
+        self.model3 = ModelPart31()
 
     def call(self, input):
         """Run the model."""
         rois, ps_score_map, bbox_shift, rpn_cls_score, rpn_bbox_pred = self.model1(input)
-
-        imdims = input.shape[0:2]
-        result = model_part2(imdims=imdims, rois=roi, ps_score_map=ps_score, bbox_shift=bbox_shift)
-        keep = model_part31(result[4], result[2])
+        cls, cls_result, cls_score, mask_result, rois, bbox = self.model2([rois, ps_score_map, bbox_shift])
+        keep = self.model3([rois, cls_score])
+        result = [cls, cls_result, cls_score, mask_result, rois, bbox]
         return result, rpn_cls_score, rpn_bbox_pred, keep
 

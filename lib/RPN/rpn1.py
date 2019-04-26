@@ -21,12 +21,12 @@ class RPN(keras.layers.Layer):
         self.feat_stride = feat_stride
         self.anchor_scales = cfg.network.ANCHOR_SCALES
         self.eval_mode = eval_mode
+        self._num_anchors = len(self.anchor_scales) * 4
         self.conv1 = tf.keras.layers.Conv2D(256, (3, 3), padding='same', kernel_initializer='TruncatedNormal')
         self.conv2 = tf.keras.layers.Conv2D(self._num_anchors * 2, (1, 1))
         self.conv3 = tf.keras.layers.Conv2D(self._num_anchors * 4, (1, 1), kernel_initializer='TruncatedNormal')
 
     def call(self, inputs):
-        _num_anchors = len(self.anchor_scales) * 4
         rpn_layers = inputs
         features = self.conv1(rpn_layers)
         rpn_bbox_cls_layers = self.conv2(features)
