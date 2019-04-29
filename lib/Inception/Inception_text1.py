@@ -10,7 +10,7 @@ def lrelu(x, leak=0.3, name="lrelu"):
         return f1 * x + f2 * abs(x)
 
 
-class InceptionTextLayer(keras.layers.Layer):
+class InceptionTextLayer(keras.Model):
     def __init__(self):
         super(InceptionTextLayer, self).__init__()
         self.conv11_size = 256

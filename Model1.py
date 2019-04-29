@@ -142,6 +142,9 @@ class ModelPart22(keras.Model):
 
     def call(self, inputs):
         roi, bbox_shift = inputs
+        with tf.GradientTape() as t:
+            ps_roi_layer2 = self.ps_roi_pooling([bbox_shift, roi])  # (n,4,k,k)
+        grad = t.gradient(ps_roi_layer2, self.ps_roi_pooling.trainable_variables)
         ps_roi_layer2 = self.ps_roi_pooling([bbox_shift, roi])  # (n,4,k,k)
         bbox = tf.reshape(ps_roi_layer2, (-1, 4, cfg.network.PSROI_BINS * cfg.network.PSROI_BINS))  # (n,4,k*k)
         bbox = tf.reduce_mean(input_tensor=bbox, axis=-1)  # (n,4)
@@ -158,7 +161,11 @@ class ModelPart2(keras.Model):
 
     def call(self, inputs, training=None, mask=None):
         rois, ps_score_map, bbox_shift = inputs
+        with tf.GradientTape() as tape:
+            offsets = self.model22([rois, bbox_shift])
+        grad = tape.gradient(offsets, self.model22.trainable_variables)
         offsets = self.model22([rois, bbox_shift])
+        self.model22.summary()
         proposals = bbox_transform_inv_tf(rois[:, -4:], offsets)
         proposals = clip_boxes_tf(proposals, self.img_dims)  # (n, 4)
         zero = tf.zeros((proposals.shape[0], 1))
@@ -167,6 +174,7 @@ class ModelPart2(keras.Model):
         #
         # bbox = self.model22([rois, bbox_shift])
         cls, cls_result, cls_score, mask_result = self.model21([proposals, ps_score_map])
+        self.model21.summary()
 
         return cls, cls_result, cls_score, mask_result, rois, offsets
 
@@ -230,7 +238,12 @@ class MyModel(tf.keras.Model):
     def call(self, input):
         """Run the model."""
         rois, ps_score_map, bbox_shift, rpn_cls_score, rpn_bbox_pred = self.model1(input)
+        self.model1.summary()
+        with tf.GradientTape() as tape:
+            cls, cls_result, cls_score, mask_result, rois, bbox = self.model2([rois, ps_score_map, bbox_shift])
+        grad = tape.gradient(cls, self.model2.trainable_variables)
         cls, cls_result, cls_score, mask_result, rois, bbox = self.model2([rois, ps_score_map, bbox_shift])
+        self.model2.summary()
         keep = self.model3([rois, cls_score])
         result = [cls, cls_result, cls_score, mask_result, rois, bbox]
         return result, rpn_cls_score, rpn_bbox_pred, keep

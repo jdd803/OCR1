@@ -23,13 +23,12 @@ import tensorflow as tf
 from lib.bbox.bbox_transform import bbox_transform_inv, clip_boxes
 from config import config as cfg
 from lib.RPN.generate_anchors import generate_anchors
-from lib.nms.nms_wrapper import nms
 
 
 def proposal_layer(rpn_bbox_cls_prob, rpn_bbox_pred, im_dims, cfg_key, _feat_stride, anchor_scales):
-    result = tf.py_function(_proposal_layer_py, [rpn_bbox_cls_prob, rpn_bbox_pred, im_dims,
-                                                 cfg_key, _feat_stride, anchor_scales],
-                            tf.float32)
+    result = tf.numpy_function(_proposal_layer_py, [rpn_bbox_cls_prob, rpn_bbox_pred, im_dims,
+                                                    cfg_key, _feat_stride, anchor_scales],
+                               tf.float32)
     result = tf.reshape(tensor=result, shape=[-1, 5])
     return result
 
@@ -58,7 +57,6 @@ def _proposal_layer_py(rpn_bbox_cls_prob, rpn_bbox_pred, im_dims, cfg_key, _feat
     assert rpn_bbox_cls_prob.shape[0] == 1, \
         'Only single item batches are supported'
 
-    cfg_key = cfg_key.numpy()
     if cfg_key == 0:
         pre_nms_topN = cfg.TRAIN.RPN_PRE_NMS_TOP_N
         post_nms_topN = cfg.TRAIN.RPN_POST_NMS_TOP_N

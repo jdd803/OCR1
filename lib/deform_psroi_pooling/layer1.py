@@ -4,7 +4,7 @@ from __future__ import absolute_import, division
 import tensorflow as tf
 from tensorflow.python import keras
 from config import config as cfg
-from lib.deform_psroi_pooling.ps_roi1 import ps_roi, tf_repeat, tf_flatten
+from lib.deform_psroi_pooling.ps_roi1 import ps_roi, ps_roi1
 
 
 class PsRoiOffset(keras.layers.Layer):
@@ -12,7 +12,7 @@ class PsRoiOffset(keras.layers.Layer):
         super(PsRoiOffset, self).__init__()
         self.filters = 4*cfg.network.PSROI_BINS*cfg.network.PSROI_BINS
         self.pool_size = pool_size   # control nums of relative positions
-        self.pool = pool  # control whether ave_pool the ps_score_map
+        self.pool = 0  # control whether ave_pool the ps_score_map
         self.feat_stride = feat_stride
         self.lamda = 0.1
         self.conv1 = tf.keras.layers.Conv2D(self.filters*2, (3, 3), padding='same',
@@ -36,9 +36,7 @@ class PsRoiOffset(keras.layers.Layer):
         # temp1 = tf.reshape(offset[0, ...], (-1, roi_shape[0]))  # (k*k*c, n)
         # temp2 = tf.reshape(offset[1, ...], (-1, roi_shape[0]))  # (k*k*c, n)
 
-        # compute the roi's width and height
-        roi_width = tf.cast(roi_width, 'float32')
-        roi_height = tf.cast(roi_height, 'float32')
+        offset = tf.cast(offset, tf.float32)
 
         # transform the normalized offsets to offsets by
         # element-wise product with the roi's width and height
@@ -47,8 +45,9 @@ class PsRoiOffset(keras.layers.Layer):
         offset = tf.stack((temp1, temp2), axis=0)  # (2,k,k,c,n)
         offset = tf.transpose(offset, (4, 1, 2, 3, 0))  # (n,k,k,c,2)
         offset = tf.reshape(offset, (offset_shape[0], offset_shape[2]*offset_shape[3], -1, 2))  # (n,k*k,c,2)
-        pooled_response = ps_roi(features=features, boxes=rois, pool=self.pool, offsets=offset,
-                                 k=self.pool_size, feat_stride=self.feat_stride)   # (n,depth,k,k)
+
+        pooled_response = ps_roi1(features=features, boxes=rois, offsets=offset,
+                                  k=self.pool_size, feat_stride=self.feat_stride)   # (n,depth,k,k)
 
         return pooled_response
 
