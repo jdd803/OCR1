@@ -32,20 +32,19 @@ def anchor_target_layer(rpn_cls_score, gt_boxes, im_dims, feat_stride, anchor_sc
     '''
     Make Python version of _anchor_target_layer_py below Tensorflow compatible
     '''
-    # rpn_labels, rpn_bbox_targets, rpn_bbox_inside_weights, \
-    # rpn_bbox_outside_weights = _anchor_target_layer_py(rpn_cls_score, gt_boxes, im_dims,
-    #                                                    feat_stride, anchor_scales
-    # )
-
     rpn_labels, rpn_bbox_targets, rpn_bbox_inside_weights, \
-    rpn_bbox_outside_weights = tf.py_function(_anchor_target_layer_py, [rpn_cls_score, gt_boxes, im_dims,
-                                                                        feat_stride, anchor_scales],
-                                              [tf.int32, tf.float32, tf.float32, tf.float32])
+    rpn_bbox_outside_weights = _anchor_target_layer_py(rpn_cls_score, gt_boxes, im_dims,
+                                                       feat_stride, anchor_scales
+    )
 
-    rpn_labels = tf.convert_to_tensor(value=tf.cast(rpn_labels, tf.int32), name='rpn_labels')
-    rpn_bbox_targets = tf.convert_to_tensor(value=rpn_bbox_targets, name='rpn_bbox_targets')
-    rpn_bbox_inside_weights = tf.convert_to_tensor(value=rpn_bbox_inside_weights, name='rpn_bbox_inside_weights')
-    rpn_bbox_outside_weights = tf.convert_to_tensor(value=rpn_bbox_outside_weights, name='rpn_bbox_outside_weights')
+    # rpn_labels, rpn_bbox_targets, rpn_bbox_inside_weights, \
+    # rpn_bbox_outside_weights = tf.py_function(_anchor_target_layer_py, [rpn_cls_score, gt_boxes, im_dims,
+    #                                                                     feat_stride, anchor_scales],
+    #                                           [tf.int32, tf.float32, tf.float32, tf.float32])
+    rpn_labels = tf.cast(tf.convert_to_tensor(rpn_labels), tf.int32)
+    rpn_bbox_targets = tf.cast(tf.convert_to_tensor(rpn_bbox_targets), tf.float32)
+    rpn_bbox_inside_weights = tf.cast(tf.convert_to_tensor(rpn_bbox_inside_weights), tf.float32)
+    rpn_bbox_outside_weights = tf.cast(tf.convert_to_tensor(rpn_bbox_outside_weights), tf.float32)
 
     return rpn_labels, rpn_bbox_targets, rpn_bbox_inside_weights, rpn_bbox_outside_weights
 
@@ -155,8 +154,7 @@ def _anchor_target_layer_py(rpn_cls_score, gt_boxes, im_dims, feat_stride, ancho
     # try to predict at each anchor
     # TODO: This "weights" business might be deprecated. Requires investigation
     bbox_targets = np.zeros((len(inds_inside), 4), dtype=np.float32)
-    gt_boxes1 = gt_boxes.numpy()
-    bbox_targets = _compute_targets(anchors, gt_boxes1[argmax_overlaps, :])
+    bbox_targets = _compute_targets(anchors, gt_boxes[argmax_overlaps, :])
 
     bbox_inside_weights = np.zeros((len(inds_inside), 4), dtype=np.float32)
     bbox_inside_weights[labels == 1, :] = np.array(cfg.TRAIN.RPN_BBOX_INSIDE_WEIGHTS)

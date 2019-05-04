@@ -1,5 +1,4 @@
 import tensorflow as tf
-from tensorflow.python import keras
 from lib.deform_conv_layer.deform_layer import ConvOffset2D
 
 
@@ -10,7 +9,7 @@ def lrelu(x, leak=0.3, name="lrelu"):
         return f1 * x + f2 * abs(x)
 
 
-class InceptionTextLayer(keras.Model):
+class InceptionTextLayer(tf.keras.Model):
     def __init__(self):
         super(InceptionTextLayer, self).__init__()
         self.conv11_size = 256
@@ -69,15 +68,15 @@ class InceptionTextLayer(keras.Model):
         conv55_out = self.conv3_4(conv55_offset)
 
         conv_shortcut = self.conv4(inputs)
-        print("Inception_conv11_out.shape:" + str(conv11_out.shape))
-        print("Inception_conv33_out.shape:" + str(conv33_out.shape))
-        print("Inception_conv55_out.shape:" + str(conv55_out.shape))
+        # print("Inception_conv11_out.shape:" + str(conv11_out.shape))
+        # print("Inception_conv33_out.shape:" + str(conv33_out.shape))
+        # print("Inception_conv55_out.shape:" + str(conv55_out.shape))
 
         conv_concat = tf.concat([conv11_out, conv33_out, conv55_out], 3)
-        print("Inception_conv_concat:" + str(conv_concat.shape))
+        # print("Inception_conv_concat:" + str(conv_concat.shape))
         conv_concat_conv = self.conv5(conv_concat)  # (batch,16,16,256)
         temp = self.add1([conv_concat_conv, conv_shortcut])
         last_result = self.ac1(temp)
-        print("Inception_last_result:" + str(last_result.shape))
+        # print("Inception_last_result:" + str(last_result.shape))
 
         return last_result

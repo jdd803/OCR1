@@ -5,7 +5,6 @@ import numpy as np
 import tensorflow as tf
 import cv2
 
-from tensorflow.python import keras
 import os
 from config import config as cfg
 from Model1 import *
@@ -85,10 +84,11 @@ def loss_cls_bbox(cls, offset, keep_inds, labels, bbox_targets, bbox_inside_weig
     return loss
 
 
+# tf.debugging.set_log_device_placement(True)
 def main():
     model = MyModel((320, 320), training=True)
-    # model.summary()
-    opt = keras.optimizers.Adam(lr=0.001)
+    opt = tf.keras.optimizers.Adam(lr=0.001)
+    # opt = keras.optimizers.Adam(lr=0.001)
     checkpoint_dir = 'path/to/model_dir'
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
@@ -145,7 +145,7 @@ def main():
 
         if i % 10 == 0:
             print('Training loss (for one batch) at step %s: %s' % (i, float(total_loss)))
-            print('Seen so far: %s samples' % ((i + 1) * 64))
+            # print('Seen so far: %s samples' % ((i + 1) * 64))
 
 
 if __name__ == "__main__":

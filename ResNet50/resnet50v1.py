@@ -5,7 +5,6 @@ from __future__ import print_function
 import os
 import warnings
 import tensorflow as tf
-from tensorflow.python import keras
 
 backend = None
 
@@ -17,7 +16,7 @@ WEIGHTS_PATH_NO_TOP = ('https://github.com/fchollet/deep-learning-models/'
                        'resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5')
 
 
-class IdentityBlock(keras.layers.Layer):
+class IdentityBlock(tf.keras.layers.Layer):
     def __init__(self, kernel_size, filters, stage, block):
         super(IdentityBlock, self).__init__()
         self.kernel_size = kernel_size
@@ -62,7 +61,7 @@ class IdentityBlock(keras.layers.Layer):
         return x
 
 
-class ConvBlock(keras.layers.Layer):
+class ConvBlock(tf.keras.layers.Layer):
     def __init__(self, kernel_size, filters, stage, block, strides=(2, 2)):
         super(ConvBlock, self).__init__()
         self.kernel_size = kernel_size
@@ -117,7 +116,7 @@ class ConvBlock(keras.layers.Layer):
         return x
 
 
-class IdentityBlock1(keras.layers.Layer):
+class IdentityBlock1(tf.keras.layers.Layer):
     def __init__(self, kernel_size, filters, stage, block):
         super(IdentityBlock1, self).__init__()
         self.kernel_size = kernel_size
@@ -219,7 +218,7 @@ class ConvBlock1(keras.layers.Layer):
         return x
 
 
-class ResNet50(keras.Model):
+class ResNet50(tf.keras.Model):
     def __init__(self, weights=None, input_shape=None, pooling=None):
         super(ResNet50, self).__init__()
         self.weights1 = weights

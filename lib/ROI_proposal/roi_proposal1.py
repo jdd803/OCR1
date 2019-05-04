@@ -1,12 +1,11 @@
 import tensorflow as tf
 from config import config as cfg
-from tensorflow.python import keras
 from lib.ROI_proposal.RPN_softmax import rpn_softmax
 from lib.ROI_proposal.proposal_layer import proposal_layer
 from lib.ROI_proposal.proposal_target_layer import proposal_target_layer
 
 
-class RoiProposal(keras.layers.Layer):
+class RoiProposal(tf.keras.layers.Layer):
     '''
     Propose highest scoring boxes to the RCNN classifier
     In evaluation mode (eval_mode==True), gt_boxes should be None.
@@ -31,5 +30,5 @@ class RoiProposal(keras.layers.Layer):
         blobs = proposal_layer(rpn_bbox_cls_prob=rpn_cls_prob, rpn_bbox_pred=rpn_bbox_pred,
                                im_dims=self.im_dims, cfg_key=key, _feat_stride=self.feat_stride,
                                anchor_scales=self.anchor_scales)
-
+        blobs = tf.reshape(blobs, (-1, 5))
         return blobs

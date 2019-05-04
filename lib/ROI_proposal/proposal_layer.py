@@ -25,15 +25,15 @@ from config import config as cfg
 from lib.RPN.generate_anchors import generate_anchors
 
 
+# def proposal_layer(rpn_bbox_cls_prob, rpn_bbox_pred, im_dims, cfg_key, _feat_stride, anchor_scales):
+#     result = tf.numpy_function(_proposal_layer_py, [rpn_bbox_cls_prob, rpn_bbox_pred, im_dims,
+#                                                     cfg_key, _feat_stride, anchor_scales],
+#                                tf.float32)
+#     result = tf.reshape(tensor=result, shape=[-1, 5])
+#     return result
+
+
 def proposal_layer(rpn_bbox_cls_prob, rpn_bbox_pred, im_dims, cfg_key, _feat_stride, anchor_scales):
-    result = tf.numpy_function(_proposal_layer_py, [rpn_bbox_cls_prob, rpn_bbox_pred, im_dims,
-                                                    cfg_key, _feat_stride, anchor_scales],
-                               tf.float32)
-    result = tf.reshape(tensor=result, shape=[-1, 5])
-    return result
-
-
-def _proposal_layer_py(rpn_bbox_cls_prob, rpn_bbox_pred, im_dims, cfg_key, _feat_stride, anchor_scales):
     '''
     # Algorithm:
     #

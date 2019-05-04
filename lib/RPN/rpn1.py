@@ -1,13 +1,8 @@
 import tensorflow as tf
 from config import config as cfg
-from tensorflow.python import keras
-# from lib.RPN.anchor_target_layer import anchor_target_layer
-# from lib.loss.loss_function import rpn_cls_loss, rpn_bbox_loss
-from lib.RPN.anchor_target_layer import anchor_target_layer
-from lib.loss.loss_function import rpn_cls_loss, rpn_bbox_loss
 
 
-class RPN(keras.layers.Layer):
+class RPN(tf.keras.layers.Layer):
     '''
     Region Proposal Network (RPN): From the convolutional feature maps
     (TensorBase Layers object) of the last layer, generate bounding boxes

@@ -1,6 +1,5 @@
 import tensorflow as tf
 import numpy as np
-from tensorflow.python import keras
 from config import config as cfg
 from ResNet50.resnet50v1 import ResNet50
 from lib.bbox.bbox_transform import bbox_transform_inv_tf, clip_boxes_tf
@@ -34,7 +33,7 @@ def upsample_image(images, y1, y2):
     return tf.image.resize(images, size=[y1, y2])
 
 
-class ModelPart1(keras.Model):
+class ModelPart1(tf.keras.Model):
     def __init__(self, img_dims, is_training=True):
         super(ModelPart1, self).__init__()
         self.training = is_training
@@ -63,24 +62,24 @@ class ModelPart1(keras.Model):
 
     def call(self, inputs):
         fea3, fea4, fea5 = self.resnet50(inputs=inputs)
-        print('Shape of f_{} {}'.format(3, fea3.shape))
-        print('Shape of f_{} {}'.format(4, fea4.shape))
-        print('Shape of f_{} {}'.format(5, fea5.shape))
+        # print('Shape of f_{} {}'.format(3, fea3.shape))
+        # print('Shape of f_{} {}'.format(4, fea4.shape))
+        # print('Shape of f_{} {}'.format(5, fea5.shape))
 
         f_stage3 = self.conv1(fea3)
         f_stage3 = self.bn1(f_stage3)
-        print("Shape of stage3's feature:" + str(f_stage3.shape))
+        # print("Shape of stage3's feature:" + str(f_stage3.shape))
         f_stage4 = upsample_image(fea4, f_stage3.shape[1], f_stage3.shape[2])
-        print("Shape of upsampled stage4's feature:" + str(f_stage4.shape))
+        # print("Shape of upsampled stage4's feature:" + str(f_stage4.shape))
         fused_fea1 = self.add1([f_stage3, f_stage4])
-        print("fused_fea1's shape:" + str(fused_fea1.shape))
+        # print("fused_fea1's shape:" + str(fused_fea1.shape))
 
         f_stage5_1 = self.conv2(fea5)
         f_stage5_1 = self.bn2(f_stage5_1)
         f_stage5_2 = upsample_image(f_stage5_1, f_stage3.shape[1], f_stage3.shape[2])
-        print("Shape of upsampled stage5's feature:" + str(f_stage5_2.shape))
+        # print("Shape of upsampled stage5's feature:" + str(f_stage5_2.shape))
         fused_fea2 = self.add2([f_stage3, f_stage5_2])
-        print("fused_fea2's shape:" + str(fused_fea2.shape))
+        # print("fused_fea2's shape:" + str(fused_fea2.shape))
 
         # Inception_text
         inception_out1 = self.inception_text_layer(fused_fea1)
@@ -96,7 +95,7 @@ class ModelPart1(keras.Model):
         return rois, ps_score_map, bbox_shift, rpn_cls_score, rpn_bbox_pred
 
 
-class ModelPart21(keras.Model):
+class ModelPart21(tf.keras.Model):
     def __init__(self):
         super(ModelPart21, self).__init__()
         self.pool_size = cfg.network.PSROI_BINS
@@ -132,7 +131,7 @@ class ModelPart21(keras.Model):
         return cls, cls_result, cls_score, mask_result  # ((n,c),n,n,(n,k,k,2))
 
 
-class ModelPart22(keras.Model):
+class ModelPart22(tf.keras.Model):
     def __init__(self):
         super(ModelPart22, self).__init__()
         self.pool_size = cfg.network.PSROI_BINS
@@ -142,16 +141,13 @@ class ModelPart22(keras.Model):
 
     def call(self, inputs):
         roi, bbox_shift = inputs
-        with tf.GradientTape() as t:
-            ps_roi_layer2 = self.ps_roi_pooling([bbox_shift, roi])  # (n,4,k,k)
-        grad = t.gradient(ps_roi_layer2, self.ps_roi_pooling.trainable_variables)
         ps_roi_layer2 = self.ps_roi_pooling([bbox_shift, roi])  # (n,4,k,k)
         bbox = tf.reshape(ps_roi_layer2, (-1, 4, cfg.network.PSROI_BINS * cfg.network.PSROI_BINS))  # (n,4,k*k)
         bbox = tf.reduce_mean(input_tensor=bbox, axis=-1)  # (n,4)
         return bbox
 
 
-class ModelPart2(keras.Model):
+class ModelPart2(tf.keras.Model):
     def __init__(self, img_dims):
         super(ModelPart2, self).__init__()
         self.img_dims = img_dims
@@ -161,9 +157,8 @@ class ModelPart2(keras.Model):
 
     def call(self, inputs, training=None, mask=None):
         rois, ps_score_map, bbox_shift = inputs
-        with tf.GradientTape() as tape:
-            offsets = self.model22([rois, bbox_shift])
-        grad = tape.gradient(offsets, self.model22.trainable_variables)
+        print("rois num:")
+        print(str(rois.shape[0]))
         offsets = self.model22([rois, bbox_shift])
         self.model22.summary()
         proposals = bbox_transform_inv_tf(rois[:, -4:], offsets)
@@ -179,7 +174,7 @@ class ModelPart2(keras.Model):
         return cls, cls_result, cls_score, mask_result, rois, offsets
 
 
-class ModelPart31(keras.layers.Layer):
+class ModelPart31(tf.keras.layers.Layer):
     def __init__(self):
         super(ModelPart31, self).__init__()
 
@@ -238,12 +233,7 @@ class MyModel(tf.keras.Model):
     def call(self, input):
         """Run the model."""
         rois, ps_score_map, bbox_shift, rpn_cls_score, rpn_bbox_pred = self.model1(input)
-        self.model1.summary()
-        with tf.GradientTape() as tape:
-            cls, cls_result, cls_score, mask_result, rois, bbox = self.model2([rois, ps_score_map, bbox_shift])
-        grad = tape.gradient(cls, self.model2.trainable_variables)
         cls, cls_result, cls_score, mask_result, rois, bbox = self.model2([rois, ps_score_map, bbox_shift])
-        self.model2.summary()
         keep = self.model3([rois, cls_score])
         result = [cls, cls_result, cls_score, mask_result, rois, bbox]
         return result, rpn_cls_score, rpn_bbox_pred, keep

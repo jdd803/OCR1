@@ -55,6 +55,7 @@ def rpn_bbox_loss(rpn_bbox_pred, rpn_bbox_targets, rpn_inside_weights, rpn_outsi
 
     # Only count loss for positive anchors. Make sure it's a sum.
     rpn_bbox_reg = tf.reduce_sum(input_tensor=tf.multiply(rpn_outside_weights, diff_sL1))
+    # rpn_bbox_reg = tf.reduce_sum(input_tensor=diff)
 
     # Constant for weighting bounding box loss with classification loss
     rpn_bbox_reg = 10 * rpn_bbox_reg
@@ -70,11 +71,10 @@ def smoothL1(x, sigma):
     smoothL1(x) = {
                     |x| - 0.5/sigma^2           otherwise
     '''
-    with tf.compat.v1.variable_scope('smoothL1'):
-        conditional = tf.less(tf.abs(x), 1 / sigma ** 2)
+    conditional = tf.less(tf.abs(x), 1 / sigma ** 2)
 
-        close = 0.5 * (sigma * x) ** 2
-        far = tf.abs(x) - 0.5 / sigma ** 2
+    close = 0.5 * (sigma * x) ** 2
+    far = tf.abs(x) - 0.5 / sigma ** 2
 
     return tf.where(conditional, close, far)
 

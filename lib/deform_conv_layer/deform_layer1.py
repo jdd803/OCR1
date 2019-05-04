@@ -2,8 +2,6 @@ from __future__ import absolute_import, division
 
 
 import tensorflow as tf
-#from keras.layers import Conv2D
-#from keras.initializers import RandomNormal
 from lib.deform_conv_layer.deform_conv import tf_batch_map_offsets
 
 class ConvOffset2D(tf.keras.layers.Conv2D):

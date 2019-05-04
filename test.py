@@ -1,32 +1,22 @@
 import tensorflow as tf
 import numpy as np
 
-
-def sum_even(items):
-    # items = items.numpy()
-    if items[0] % 2 > 0.:
-        s = 3 * items[0]
-    else:
-        s = 2 * items[0]
-    s = tf.reshape(s, (-1,))
-    for i in range(1, items.shape[0]):
-        if items[i] % 2 > 0.:
-            s1 = 3*items[i]
-        else:
-            s1 = 2*items[i]
-        s1 = tf.reshape(s1, (-1,))
-        s = tf.concat((s, s1), axis=0)
-    return s
+a = tf.Variable([[[1., 2., 3.], [4., 5., 6.]], [[7., 8., 9.], [10., 11., 12.]]])
+print(a.shape)
+b = tf.ones((2, 2, 3))
+b2 = tf.cast(b, tf.float32)
 
 
-a = tf.Variable([1.0, 2.0, 3.0])
+def fun(a, b):
+    a1 = a + 2.
+    b1 = b + 1.
+    c = a1 - b1
+    d = tf.multiply(c, c)
+    return d
 
 
-with tf.GradientTape(persistent=True) as tape:
-    # a = tf.constant([10, 12, 15, 20])
-    s = tf.py_function(sum_even, [a], tf.float32)
-    s1 = a*a
-grad = tape.gradient(s1, a)
-grad1 = tape.gradient(s, a)
+with tf.GradientTape() as tape:
+    d = fun(a, b)
 
-print(s)
+grad = tape.gradient(d, a)
+print(grad)
