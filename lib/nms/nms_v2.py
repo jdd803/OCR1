@@ -19,18 +19,18 @@ def py_cpu_nms_v2(i, keep1, dets, thresh):
 
     areas = (x2 - x1 + 1) * (y2 - y1 + 1)
 
-    xx1 = np.maximum(x1[i], x1[:])
-    yy1 = np.maximum(y1[i], y1[:])
-    xx2 = np.minimum(x2[i], x2[:])
-    yy2 = np.minimum(y2[i], y2[:])
+    xx1 = np.maximum(x1[keep1[i]], x1[:])
+    yy1 = np.maximum(y1[keep1[i]], y1[:])
+    xx2 = np.minimum(x2[keep1[i]], x2[:])
+    yy2 = np.minimum(y2[keep1[i]], y2[:])
 
     w = np.maximum(0.0, xx2 - xx1 + 1)
     h = np.maximum(0.0, yy2 - yy1 + 1)
     inter = w * h
-    ovr = inter / (areas[i] + areas[:] - inter)
+    ovr = inter / (areas[keep1[i]] + areas[:] - inter)
 
     inds = np.where((ovr >= thresh) & (ovr < 1))[0]
-    keep = [val for val in inds if val not in keep1]
-    # keep = list(set(inds).difference(set(keep1)))
+    # keep = [val for val in inds if val not in keep1]
+    keep = np.setdiff1d(inds, keep1)
 
     return keep

@@ -23,10 +23,12 @@ def image_mean_subtraction(images, means=[123.68,116.78,103.94]):
     means = img_mean
     if len(means) != num_channels:
         raise ValueError('The number of means must equal to the number of channels')
-    channels = tf.split(value=images, num_or_size_splits=num_channels, axis=-1)
+    # channels = np.split(value=images, num_or_size_splits=num_channels, axis=-1)
+    channels = np.split(images, num_channels, axis=-1)
     for i in range(num_channels):
+        channels[i] = channels[i].astype(np.float32)
         channels[i] -= means[i]
-    return tf.concat(values=channels, axis=-1)
+    return np.concatenate(channels, axis=-1)
 
 
 def upsample_image(images, y1, y2):
@@ -41,6 +43,7 @@ class ModelPart1(tf.keras.Model):
         self.feat_stride = 8
         self.num_classes = cfg.dataset.NUM_CLASSES
         self.resnet50 = ResNet50(weights=None, input_shape=None, pooling=None)
+        # self.resnet50.load_weights("./path/resnet50_weights/resnet50_weights_tf.h5", by_name=True)
         self.num_outputs = 1024
         self.conv1 = tf.keras.layers.Conv2D(filters=self.num_outputs, kernel_size=(1, 1),
                                             activation='relu', kernel_initializer='TruncatedNormal')
@@ -59,6 +62,7 @@ class ModelPart1(tf.keras.Model):
                                             kernel_size=(1, 1))
         self.conv4 = tf.keras.layers.Conv2D(filters=4*cfg.network.PSROI_BINS*cfg.network.PSROI_BINS,
                                             kernel_size=(1, 1))
+        # self.resnet50.load_weights("./path/resnet50_weights/resnet50_weights_tf.h5", by_name=True)
 
     def call(self, inputs):
         fea3, fea4, fea5 = self.resnet50(inputs=inputs)
@@ -157,10 +161,8 @@ class ModelPart2(tf.keras.Model):
 
     def call(self, inputs, training=None, mask=None):
         rois, ps_score_map, bbox_shift = inputs
-        print("rois num:")
-        print(str(rois.shape[0]))
+        print("rois num:"+str(rois.shape[0]))
         offsets = self.model22([rois, bbox_shift])
-        self.model22.summary()
         proposals = bbox_transform_inv_tf(rois[:, -4:], offsets)
         proposals = clip_boxes_tf(proposals, self.img_dims)  # (n, 4)
         zero = tf.zeros((proposals.shape[0], 1))
@@ -169,7 +171,6 @@ class ModelPart2(tf.keras.Model):
         #
         # bbox = self.model22([rois, bbox_shift])
         cls, cls_result, cls_score, mask_result = self.model21([proposals, ps_score_map])
-        self.model21.summary()
 
         return cls, cls_result, cls_score, mask_result, rois, offsets
 
@@ -177,7 +178,6 @@ class ModelPart2(tf.keras.Model):
 class ModelPart31(tf.keras.layers.Layer):
     def __init__(self):
         super(ModelPart31, self).__init__()
-
     def call(self, inputs, **kwargs):
         rois, cls_score = inputs
         per_roi = rois[:, 1:]
@@ -189,35 +189,45 @@ class ModelPart31(tf.keras.layers.Layer):
         return keep
 
 
-def model_part3_2(roi, keep, i, mask, score):
+def model_part3_2(roi0, keep, i, mask, score):
     ''' upsample and compute the mask '''
-    width = roi[keep[i]][2] - roi[keep[i]][0] + 1
-    height = roi[keep[i]][3] - roi[keep[i]][1] + 1
+    roi = tf.round(roi0)
+    width = roi[keep[i]][3] - roi[keep[i]][1] + 1
+    height = roi[keep[i]][4] - roi[keep[i]][2] + 1
     mask1 = tf.image.resize(mask[keep[i]], (height, width))
-    ovr_threshold = tf.convert_to_tensor(0.5)
-    keep1 = tf.numpy_function(nms1, [i, keep, roi, ovr_threshold], tf.int32)
+    ovr_threshold = tf.constant(0.5)
+    keep1 = tf.py_function(nms1, [i, keep, roi[:, 1:], ovr_threshold], tf.int32)
     box_up_num = len(keep1) + 1
 
     mask_i = mask1  # (h,w,2)
-    roi_i = roi[keep[i]]  # (n,4)
+    roi_i = roi[keep[i]]  # (n,5)
     score_i = score[keep[i]]  # (n,)
-    mask_i = tf.pad(tensor=mask_i, paddings=[[roi_i[-4], 0], [roi_i[-3], 0], [0, 0]])
+    mask_i = tf.pad(tensor=mask_i, paddings=[[roi_i[-3], 0], [roi_i[-4], 0], [0, 0]])
     mask_i *= score_i
 
     # fuse the unsupressed box with supressed boxes by weighted averaging
     for j in keep1:
         roi_j = roi[j]
-        width_j = roi_j[2] - roi_j[0] + 1
-        height_j = roi_j[3] - roi_j[1] + 1
+        width_j = roi_j[3] - roi_j[1] + 1
+        height_j = roi_j[4] - roi_j[2] + 1
         score_j = score[j]
         mask_j = tf.image.resize(mask[j], (height_j, width_j))
-        rb = tf.maximum(roi_i[-2:], roi_j[-2:])
-        pad_rb = rb - roi_j[-2:]
-        mask_j = tf.pad(tensor=mask_j, paddings=[[roi_j[-4], pad_rb[0]], [roi_j[-3], pad_rb[1]], [0, 0]])
+        mask_i_shape = mask_i.shape
+        r = tf.maximum(mask_i_shape[1]-1, roi_j[-2])
+        b = tf.maximum(mask_i_shape[0]-1, roi_j[-1])
+        # rb = tf.maximum(roi_i[-2:], roi_j[-2:])
+        # pad_rb = rb - roi_j[-2:]
+        pad_r = r - mask_i_shape[1] + 1
+        pad_r1 = r - roi_j[-2]
+        pad_b = b - mask_i_shape[0] + 1
+        pad_b1 = b - roi_j[-1]
+        mask_i = tf.pad(tensor=mask_i, paddings=[[0, pad_b], [0, pad_r], [0, 0]])
+        mask_j = tf.pad(tensor=mask_j, paddings=[[roi_j[-3], pad_b1], [roi_j[-4], pad_r1], [0, 0]])
         mask_i = mask_i + mask_j * score_j
 
     mask_i /= box_up_num
-    mask = mask_i[roi_i[-4]:, roi_i[-3]:, :]
+    roi_i = tf.cast(roi_i, tf.int32)
+    mask = mask_i[roi_i[-3]:roi_i[-1], roi_i[-4]:roi_i[-2], :]
     return mask
 
 

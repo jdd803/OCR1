@@ -64,14 +64,11 @@ def _proposal_target_layer_py(rpn_rois, gt_boxes, _num_classes):
         'Only single item batches are supported'
 
     num_images = 1
-    rois_per_image = cfg.TRAIN.BATCH_ROIS // num_images     # 128
-    fg_rois_per_image = np.round(cfg.TRAIN.FG_FRACTION * rois_per_image).astype(np.int32)
 
     # Sample rois with classification labels and bounding box regression
     # targets
     labels, rois, bbox_targets, bbox_inside_weights, keep_inds, fg_nums = _sample_rois(
-        all_rois, gt_boxes, fg_rois_per_image,
-        rois_per_image, _num_classes)
+        all_rois, gt_boxes, _num_classes)
 
     rois = rois.reshape(-1, 5)
     # preds = preds.reshape(-1,4)
@@ -129,7 +126,7 @@ def _compute_targets(ex_rois, gt_rois, labels):
         (labels[:, np.newaxis], targets)).astype(np.float32, copy=False)
 
 
-def _sample_rois(all_rois, gt_boxes, fg_rois_per_image, rois_per_image, num_classes):
+def _sample_rois(all_rois, gt_boxes, num_classes):
     """Generate a random sample of RoIs comprising foreground and background
     examples.
     """
@@ -147,21 +144,25 @@ def _sample_rois(all_rois, gt_boxes, fg_rois_per_image, rois_per_image, num_clas
     fg_inds = np.where(max_overlaps >= cfg.TRAIN.FG_THRESH)[0]
     # Guard against the case when an image has fewer than fg_rois_per_image
     # foreground RoIs
-    fg_rois_per_this_image = min(fg_rois_per_image, fg_inds.size)
+    fg_rois_per_this_image = fg_inds.size
     # Sample foreground regions without replacement
+    '''
     if fg_inds.size > 0:
         fg_inds = npr.choice(fg_inds, size=fg_rois_per_this_image, replace=False)
+    '''
 
     # Select background RoIs as those within [BG_THRESH_LO, BG_THRESH_HI)
     bg_inds = np.where((max_overlaps < cfg.TRAIN.BG_THRESH_HI) &
                        (max_overlaps >= cfg.TRAIN.BG_THRESH_LO))[0]
     # Compute number of background RoIs to take from this image (guarding
     # against there being fewer than desired)
-    bg_rois_per_this_image = rois_per_image - fg_rois_per_this_image
-    bg_rois_per_this_image = min(bg_rois_per_this_image, bg_inds.size)
+    '''bg_rois_per_this_image = rois_per_image - fg_rois_per_this_image'''
+    bg_rois_per_this_image = bg_inds.size
     # Sample background regions without replacement
+    '''
     if bg_inds.size > 0:
         bg_inds = npr.choice(bg_inds, size=bg_rois_per_this_image, replace=False)
+    '''
 
     # The indices that we're selecting (both fg and bg)
     keep_inds = np.append(fg_inds, bg_inds)
@@ -174,11 +175,8 @@ def _sample_rois(all_rois, gt_boxes, fg_rois_per_image, rois_per_image, num_clas
     labels_fg = tf.cast(labels[:fg_rois_per_this_image], 'int32')
     labels_bg = tf.zeros((labels[fg_rois_per_this_image:].shape[0],), dtype='int32')
     labels = tf.concat((labels_fg, labels_bg), axis=-1)
-    # labels[fg_rois_per_this_image:] = 0
 
     rois = all_rois[keep_inds]
-    # offset = offsets[keep_inds]
-    # cls = cls_score[keep_inds]
 
     # temp = gt_boxes[gt_assignment[keep_inds], :4]
     temp = tf.gather(gt_boxes, gt_assignment[keep_inds])

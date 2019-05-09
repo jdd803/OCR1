@@ -95,10 +95,11 @@ def mask_loss(rfcn_mask_score, labels):
     :return:
     '''
     rfcn_mask_score = tf.reshape(rfcn_mask_score, (-1, 2), name='mask_score')
-    labels = tf.reshape(labels, (-1, 1), name='mask_labels')
+    labels = tf.reshape(labels, (-1,), name='mask_labels')
     # Cross entropy error
     mask_cross_entropy = tf.reduce_mean(
-        input_tensor=tf.nn.sparse_softmax_cross_entropy_with_logits(logits=rfcn_mask_score, labels=labels)
+        input_tensor=tf.nn.sparse_softmax_cross_entropy_with_logits(logits=rfcn_mask_score,
+                                                                    labels=labels)
     )
 
     return mask_cross_entropy

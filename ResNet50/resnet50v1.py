@@ -8,13 +8,6 @@ import tensorflow as tf
 
 backend = None
 
-WEIGHTS_PATH = ('https://github.com/fchollet/deep-learning-models/'
-                'releases/download/v0.2/'
-                'resnet50_weights_tf_dim_ordering_tf_kernels.h5')
-WEIGHTS_PATH_NO_TOP = ('https://github.com/fchollet/deep-learning-models/'
-                       'releases/download/v0.2/'
-                       'resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5')
-
 
 class IdentityBlock(tf.keras.layers.Layer):
     def __init__(self, kernel_size, filters, stage, block):
@@ -128,21 +121,21 @@ class IdentityBlock1(tf.keras.layers.Layer):
         bn_name_base = 'bn' + str(stage) + block + '_branch'
         self.conv1 = tf.keras.layers.Conv2D(self.filters1, (1, 1), padding='same', dilation_rate=2,
                                             kernel_initializer='TruncatedNormal',
-                                            name=conv_name_base + '2a')
-        self.bn1 = tf.keras.layers.BatchNormalization(axis=bn_axis, name=bn_name_base + '2a')
+                                            name=conv_name_base + '2a1')
+        self.bn1 = tf.keras.layers.BatchNormalization(axis=bn_axis, name=bn_name_base + '2a1')
         self.ac1 = tf.keras.layers.Activation('relu')
 
         self.conv2 = tf.keras.layers.Conv2D(self.filters2, self.kernel_size,
                                             padding='same', dilation_rate=2,
                                             kernel_initializer='TruncatedNormal',
-                                            name=conv_name_base + '2b')
-        self.bn2 = tf.keras.layers.BatchNormalization(axis=bn_axis, name=bn_name_base + '2b')
+                                            name=conv_name_base + '2b1')
+        self.bn2 = tf.keras.layers.BatchNormalization(axis=bn_axis, name=bn_name_base + '2b1')
         self.ac2 = tf.keras.layers.Activation('relu')
 
         self.conv3 = tf.keras.layers.Conv2D(self.filters3, (1, 1), padding='same', dilation_rate=2,
                                             kernel_initializer='TruncatedNormal',
-                                            name=conv_name_base + '2c')
-        self.bn3 = tf.keras.layers.BatchNormalization(axis=bn_axis, name=bn_name_base + '2c')
+                                            name=conv_name_base + '2c1')
+        self.bn3 = tf.keras.layers.BatchNormalization(axis=bn_axis, name=bn_name_base + '2c1')
 
         self.add1 = tf.keras.layers.Add()
         self.ac3 = tf.keras.layers.Activation('relu')
@@ -161,7 +154,7 @@ class IdentityBlock1(tf.keras.layers.Layer):
         return x
 
 
-class ConvBlock1(keras.layers.Layer):
+class ConvBlock1(tf.keras.layers.Layer):
     def __init__(self, kernel_size, filters, stage, block, strides=(1, 1)):
         super(ConvBlock1, self).__init__()
         self.kernel_size = kernel_size
@@ -174,26 +167,26 @@ class ConvBlock1(keras.layers.Layer):
         bn_name_base = 'bn' + str(stage) + block + '_branch'
         self.conv1 = tf.keras.layers.Conv2D(self.filters1, (1, 1), strides=self.strides, padding='same',
                                             kernel_initializer='TruncatedNormal', dilation_rate=2,
-                                            name=conv_name_base + '2a')
-        self.bn1 = tf.keras.layers.BatchNormalization(axis=bn_axis, name=bn_name_base + '2a')
+                                            name=conv_name_base + '2a1')
+        self.bn1 = tf.keras.layers.BatchNormalization(axis=bn_axis, name=bn_name_base + '2a1')
         self.ac1 = tf.keras.layers.Activation('relu')
 
         self.conv2 = tf.keras.layers.Conv2D(self.filters2, self.kernel_size, padding='same',
                                             kernel_initializer='TruncatedNormal', dilation_rate=2,
-                                            name=conv_name_base + '2b')
-        self.bn2 = tf.keras.layers.BatchNormalization(axis=bn_axis, name=bn_name_base + '2b')
+                                            name=conv_name_base + '2b1')
+        self.bn2 = tf.keras.layers.BatchNormalization(axis=bn_axis, name=bn_name_base + '2b1')
         self.ac2 = tf.keras.layers.Activation('relu')
 
         self.conv3 = tf.keras.layers.Conv2D(self.filters3, (1, 1),
                                             kernel_initializer='TruncatedNormal', dilation_rate=2,
-                                            name=conv_name_base + '2c')
-        self.bn3 = tf.keras.layers.BatchNormalization(axis=bn_axis, name=bn_name_base + '2c')
+                                            name=conv_name_base + '2c1')
+        self.bn3 = tf.keras.layers.BatchNormalization(axis=bn_axis, name=bn_name_base + '2c1')
 
         self.conv4 = tf.keras.layers.Conv2D(self.filters3, (1, 1), strides=self.strides, padding='same',
                                             kernel_initializer='TruncatedNormal', dilation_rate=2,
-                                            name=conv_name_base + '1')
+                                            name=conv_name_base + '11')
         self.bn4 = tf.keras.layers.BatchNormalization(
-            axis=bn_axis, name=bn_name_base + '1')
+            axis=bn_axis, name=bn_name_base + '11')
 
         self.add1 = tf.keras.layers.Add()
         self.ac3 = tf.keras.layers.Activation('relu')
@@ -225,6 +218,7 @@ class ResNet50(tf.keras.Model):
         self.input_shape1 = input_shape
         self.pooling = pooling
         bn_axis = 3
+        # tf.python.keras.layers.ZeroPadding2D
         self.pad1 = tf.keras.layers.ZeroPadding2D(padding=(3, 3), name='conv1_pad')
         self.conv1 = tf.keras.layers.Conv2D(64, (7, 7),
                                             strides=(2, 2),
@@ -258,9 +252,13 @@ class ResNet50(tf.keras.Model):
 
     def call(self, inputs, training=None, mask=None):
         img_input = tf.expand_dims(input=inputs, axis=0)
-        img_input = tf.cast(img_input, tf.float32)
+        import numpy as np
+        max0 = np.max(img_input)
         x = self.pad1(img_input)
+        max1 = np.max(x)
         x = self.conv1(x)
+        weights = self.conv1.get_weights()
+        max2 = np.max(x)
         x = self.bn1(x)
         x = self.ac1(x)
         x = self.pad2(x)
