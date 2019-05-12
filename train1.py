@@ -28,10 +28,10 @@ def preprocess(img, gtbox, gtmask):
     bottom = img_shape1[0] - img_size
     inds = []
     while len(inds) == 0:
-        # left = np.random.randint(0, right)
-        # top = np.random.randint(0, bottom)
-        left = 0
-        top = 0
+        left = np.random.randint(0, right)
+        top = np.random.randint(0, bottom)
+        # left = 0
+        # top = 0
         img1 = img[top:top + img_size, left:left + img_size]
         gtbox0 = np.array(gtbox)
         gtmask0 = np.array(gtmask)
@@ -73,7 +73,7 @@ def loss_rpn(rpn_cls_score, rpn_bbox_pred, gt_boxes, img_dims):
                             8, (2, 4, 8, 16))
     loss1 = rpn_cls_loss(rpn_cls_score, rpn_labels)
     loss2 = rpn_bbox_loss(rpn_bbox_pred, rpn_bbox_targets, rpn_bbox_inside_weights, rpn_bbox_outside_weights)
-    return loss1 + loss2
+    return loss1, loss2
 
 
 def loss_cls_bbox(cls, offset, keep_inds, labels, bbox_targets, bbox_inside_weights, bbox_outside_weights):
@@ -86,8 +86,8 @@ def loss_cls_bbox(cls, offset, keep_inds, labels, bbox_targets, bbox_inside_weig
     loss4 = rfcn_bbox_loss(rfcn_bbox_pred=preds1, bbox_targets=bbox_targets,
                            roi_inside_weights=bbox_inside_weights, roi_outside_weights=bbox_outside_weights)
 
-    loss = loss3 + loss4
-    return loss
+    # loss = loss3 + loss4
+    return loss3, loss4
 
 
 def compute_tp_fp_fn(cls, boxes, gt_boxes, threshold):
@@ -115,7 +115,7 @@ def compute_tp_fp_fn(cls, boxes, gt_boxes, threshold):
 
 def main():
     model = MyModel((480, 480), training=True)
-    opt = tf.keras.optimizers.Adam(lr=0.00001)
+    opt = tf.keras.optimizers.Adam(lr=0.0004)
     # model1 = tf.python.keras.Model()
 
     checkpoint_dir = 'path/to/model_dir'
@@ -141,11 +141,13 @@ def main():
         model.model1.resnet50.load_weights("./path/resnet50_weights/resnet50_weights_tf.h5", by_name=True)
     else:
         model.load_weights("./path/model_weights.h5")
+        #model.model1.resnet50.load_weights("./path/resnet50_weights/resnet50_weights_tf.h5", by_name=True)
+        pass
     print("----------------------------")
 
 
-    epochs = 100
-    img_num = 1
+    epochs = 200
+    img_num = 10
 
     for epoch in range(epochs):
         TP = 0.
@@ -156,10 +158,10 @@ def main():
 
             # ckpt.step.assign_add(1)
 
-            img, gtbox, gtmask = next_batch(1, 0 % 10)
-            img0 = img['1']
-            gtbox0 = gtbox['1']
-            gtmask0 = gtmask['1']
+            img, gtbox, gtmask = next_batch(1, i % 10)
+            img0 = img[str(i+1)]
+            gtbox0 = gtbox[str(i+1)]
+            gtmask0 = gtmask[str(i+1)]
             img1, gtbox1, gtmask1 = preprocess(img0, gtbox0, gtmask0)
             img_dims = img1.shape[0:2]
             img_mask = generate_mask(img_dims, gtmask1)
@@ -176,9 +178,9 @@ def main():
                 cls_score_keep = tf.gather(cls_score, keep, axis=0)
                 cls_pred_keep = tf.gather(cls_pred, keep, axis=0)
                 offset_pred_keep = tf.gather(offset_pred, keep, axis=0)
-                print("proposals'num:"+str(roi_pred_keep.shape[0]))
 
-                rpn_loss = loss_rpn(rpn_cls_score, rpn_bbox_pred, gtbox1, img_dims)
+                rpn_cls_loss1, rpn_bbox_loss1 = loss_rpn(rpn_cls_score, rpn_bbox_pred, gtbox1, img_dims)
+                rpn_loss = rpn_cls_loss1 + rpn_bbox_loss1
                 # the keep rois in rois and gt_boxes
                 rois1, labels1, bbox_targets1, bbox_inside_weights1, \
                 bbox_outside_weights1, keep_inds, fg_num = proposal_target_layer(
@@ -186,44 +188,50 @@ def main():
                 )
                 print("fg_nums:"+str(fg_num))
 
-                rfcn_cls_bbox_loss = loss_cls_bbox(cls=cls_pred_keep, offset=offset_pred_keep, keep_inds=keep_inds,
+                for j in range(fg_num):
+                    pass
+
+                rfcn_cls_loss1, rfcn_bbox_loss1 = loss_cls_bbox(cls=cls_pred_keep, offset=offset_pred_keep, keep_inds=keep_inds,
                                                    labels=labels1, bbox_targets=bbox_targets1,
                                                    bbox_inside_weights=bbox_inside_weights1,
                                                    bbox_outside_weights=bbox_outside_weights1)
-                total_loss = rpn_loss + rfcn_cls_bbox_loss
+                loss1 = rpn_loss + rfcn_cls_loss1
+                total_loss = rpn_cls_loss1 + rpn_bbox_loss1 + 10*rfcn_cls_loss1 + 5*rfcn_bbox_loss1
 
                 for j in range(fg_num):
                     mask1 = model_part3_2(roi_pred, keep, keep_inds[j], mask_pred, cls_score)
                     rfcn_mask_loss = loss_mask(mask1, roi_pred_keep[keep_inds[j]], img_mask)
                     total_loss = total_loss + rfcn_mask_loss
 
+            if np.isnan(total_loss):
+                exit()
 
             grads = t.gradient(total_loss, model.trainable_variables)
             opt.apply_gradients(zip(grads, model.trainable_variables))
 
             # record the TP FP FN to compute precision and recall
-            TP1, FP1, FN1 = compute_tp_fp_fn(cls_pred[:, 1], roi_pred[:, 1:], gtbox1, 0.5)
+            TP1, FP1, FN1 = compute_tp_fp_fn(cls_pred_keep[:, 1], roi_pred_keep[:, 1:], gtbox1, 0.5)
             TP += TP1
             FP += FP1
             FN += FN1
 
+            print('Training loss (for one batch) at epoch %s step %s: %s' % (epoch, i, float(total_loss)))
+            print('rpn_cls_loss:{:.5f}---rpn_bbox_loss:{:.5f}---rfcn_cls_loss:{:.5f}---'
+                  'rfcn_bbox_loss:{}'.format(rpn_cls_loss1, rpn_bbox_loss1,
+                                             rfcn_cls_loss1, rfcn_bbox_loss1))
+            print(' ' * 20)
+
         precision = TP / np.maximum((TP + FP), np.finfo(np.float64).eps)
         recall = TP / float(TP + FN)
-        print('Training loss (for one batch) at epoch %s step %s: %s' % (epoch, i, float(total_loss)))
         print('Precision: %s ------Recall: %s' % (precision, recall))
+        print(' '*20)
 
-        if np.isnan(total_loss):
-            exit()
-        elif epoch % 5 == 4:
-            # tf.python.keras.Model.save_weights()
-            # model.save_weights("./path/model_weights.h5")
-            # save_path = manager.save()
-            # print("Saved checkpoint for step {}: {}".format(int(ckpt.step), save_path))
-            pass
-        else:
-            pass
-        # if i % 10 == 0:
-        #     print('Training loss (for one batch) at step %s: %s' % (i, float(total_loss)))
+
+        model.save_weights("./path/model_weights.h5")
+        print("save weights")
+        # save_path = manager.save()
+        # print("Saved checkpoint for step {}: {}".format(int(ckpt.step), save_path))
+
 
 
 if __name__ == "__main__":

@@ -124,7 +124,8 @@ class ModelPart21(tf.keras.Model):
 
         cls = tf.nn.softmax(cls_ave, axis=-1)       # (n,c)
         cls_result = tf.argmax(input=cls, axis=-1)  # (n,)
-        cls_score = tf.reduce_max(cls, axis=-1)     # (n,)
+        # cls_score = tf.reduce_max(cls, axis=-1)     # (n,)
+        cls_score = cls[:, 1]
 
         # (n,2,k,k,2)->(n,k,k,2)
         mask_ind = tf.reshape(tf.range(ps_roi_layer1_shape[0]), (-1, 1))

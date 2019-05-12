@@ -57,7 +57,7 @@ def proposal_layer(rpn_bbox_cls_prob, rpn_bbox_pred, im_dims, cfg_key, _feat_str
     assert rpn_bbox_cls_prob.shape[0] == 1, \
         'Only single item batches are supported'
 
-    if cfg_key == 0:
+    if cfg_key.numpy() == 0:
         pre_nms_topN = cfg.TRAIN.RPN_PRE_NMS_TOP_N
         post_nms_topN = cfg.TRAIN.RPN_POST_NMS_TOP_N
         nms_thresh = cfg.TRAIN.RPN_NMS_THRESH

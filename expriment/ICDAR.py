@@ -1,11 +1,11 @@
 import os,sys
 
-path1 = '..\dataset\ch4_training_localization_transcription_mask'
-path2 = '..\dataset\ch4_training_localization_transcription_gt'
+path1 = '../dataset/dataset/ch4_training_localization_transcription_mask/'
+path2 = '../dataset/dataset/ch4_training_localization_transcription_gt/'
 
-for i in range(1000):
-    gt_name = '\gt_img_' + str(i + 1) + '.txt'
-    mask_name = '\gt_img_' + str(i + 1) + '.txt'
+for i in range(50):
+    gt_name = 'gt_img_' + str(i + 1) + '.txt'
+    mask_name = 'gt_img_' + str(i + 1) + '.txt'
     mask_path = path1 + mask_name
     gt_path = path2 + gt_name
     mask_file = open(mask_path,mode='r',encoding='UTF-8-sig')
@@ -14,10 +14,13 @@ for i in range(1000):
     for line in lines:
         xy = line.split(',')
         x = xy[0::2]
+        x = x[0:-1]
         y = xy[1::2]
-        min_x = min(x[0:-1])
+        x = [int(num) for num in x]
+        y = [int(num) for num in y]
+        min_x = min(x)
         min_y = min(y)
-        max_x = max(x[0:-1])
+        max_x = max(x)
         max_y = max(y)
 
         box = [min_x,min_y,max_x,max_y]
@@ -27,3 +30,4 @@ for i in range(1000):
 
     mask_file.close()
     gt_file.close()
+

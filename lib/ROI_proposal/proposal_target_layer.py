@@ -85,7 +85,7 @@ def _proposal_target_layer_py(rpn_rois, gt_boxes, _num_classes):
     return np.float32(rois), labels, bbox_targets, bbox_inside_weights, bbox_outside_weights, keep_inds, fg_nums
 
 
-def _get_bbox_regression_labels(bbox_target_data, num_classes):
+def _get_bbox_regression_labels(bbox_target_data, fgnums):
     """Bounding-box regression targets (bbox_target_data) are stored in a
     compact form N x (class, tx, ty, tw, th)
     This function expands those targets into the 4-of-4*K representation used
@@ -95,6 +95,7 @@ def _get_bbox_regression_labels(bbox_target_data, num_classes):
         bbox_inside_weights (ndarray): N x 4K blob of loss weights
     """
     clss = bbox_target_data[:, 0]
+    clss[fgnums:] = 0.
     # bbox_targets = np.zeros((clss.size, 4 * num_classes), dtype=np.float32)
     bbox_targets = np.zeros((clss.size, 4), dtype=np.float32)
     bbox_inside_weights = np.zeros(bbox_targets.shape, dtype=np.float32)
@@ -136,9 +137,10 @@ def _sample_rois(all_rois, gt_boxes, num_classes):
         np.ascontiguousarray(gt_boxes[:, :4], dtype=np.float))  # (n,k)overlaps
     gt_assignment = overlaps.argmax(axis=1)  # get the gtbox with max overlaps(n,1)
     max_overlaps = overlaps.max(axis=1)  # get the max overlaps
-    labels = tf.gather(gt_boxes, gt_assignment, axis=0)
-    labels = labels[:, 4]
-    # labels = gt_boxes[gt_assignment, 4]  # (n,1)
+    labels = np.where(max_overlaps[:] == 0, np.ones(gt_assignment.shape, dtype='int32'), np.zeros(gt_assignment.shape, 'int32'))
+    # labels0 = tf.gather(gt_boxes, gt_assignment, axis=0)
+    # labels1 = labels0[:, 4]
+    # labels = tf.where(max_overlaps==0, labels1, tf.zeros(labels1.shape, tf.int32))
 
     # Select foreground RoIs as those with >= FG_THRESH overlap
     fg_inds = np.where(max_overlaps >= cfg.TRAIN.FG_THRESH)[0]
@@ -172,9 +174,9 @@ def _sample_rois(all_rois, gt_boxes, num_classes):
     labels = tf.gather(labels, keep_inds, axis=0)
 
     # Clamp labels for the background RoIs to 0
-    labels_fg = tf.cast(labels[:fg_rois_per_this_image], 'int32')
-    labels_bg = tf.zeros((labels[fg_rois_per_this_image:].shape[0],), dtype='int32')
-    labels = tf.concat((labels_fg, labels_bg), axis=-1)
+    # labels_fg = tf.cast(labels[:fg_rois_per_this_image], 'int32')
+    # labels_bg = tf.zeros((labels[fg_rois_per_this_image:].shape[0],), dtype='int32')
+    # labels = tf.concat((labels_fg, labels_bg), axis=-1)
 
     rois = all_rois[keep_inds]
 
@@ -186,6 +188,6 @@ def _sample_rois(all_rois, gt_boxes, num_classes):
         rois[:, 1:5], temp1, labels)   # (labels,targets)(n,5)
 
     bbox_targets, bbox_inside_weights = \
-        _get_bbox_regression_labels(bbox_target_data, num_classes)
+        _get_bbox_regression_labels(bbox_target_data, fg_num)
 
     return labels, rois, bbox_targets, bbox_inside_weights, keep_inds, fg_num
