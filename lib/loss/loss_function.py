@@ -80,9 +80,11 @@ def smoothL1(x, sigma):
 
 
 def rfcn_cls_loss(rfcn_cls_score, labels):
+    temp1 = tf.squeeze(rfcn_cls_score)
+    temp2 = tf.reshape(labels, (-1,))
     rfcn_cross_entropy = tf.reduce_mean(
-        input_tensor=tf.nn.sparse_softmax_cross_entropy_with_logits(logits=tf.squeeze(rfcn_cls_score),
-                                                                    labels=tf.reshape(labels, (-1,))))
+        input_tensor=tf.nn.sparse_softmax_cross_entropy_with_logits(logits=tf.reshape(temp1,(-1, 2)),
+                                                                    labels=temp2))
 
     return rfcn_cross_entropy
 

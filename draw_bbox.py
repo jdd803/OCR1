@@ -1,6 +1,8 @@
 import cv2 as cv
 import os
+from load_data import next_batch
 import numpy as np
+
 
 img = cv.imread('./dataset/dataset/ch4_training_images/img_1.jpg')
 gtbox = [[377,117,465,130,1],
@@ -32,6 +34,7 @@ def draw(image,gtboxes):
         cv.polylines(img, [pts], True, (0, 255, 255))
     cv.imshow("Image", image)
     cv.waitKey(0)
+    cv.destroyAllWindows()
     pass
 def draw1(image,gtboxes):
     for i in range(len(gtboxes)):
@@ -39,7 +42,18 @@ def draw1(image,gtboxes):
         cv.rectangle(image, (gtboxes[i][0],gtboxes[i][1]), (gtboxes[i][2],gtboxes[i][3]), (0, 255, 0), 1)
     cv.imshow("Image", image)
     cv.waitKey(0)
+    cv.destroyAllWindows()
     pass
 
 #draw(img,mask1)
-draw1(img,gtbox)
+# draw1(img,gtbox)
+
+for i in range(1000):
+
+    img, gtbox, gtmask = next_batch(1, i % 1000)
+    img0 = img[str(i + 1)]
+    gtbox0 = gtbox[str(i + 1)]
+    gtmask0 = gtmask[str(i + 1)]
+    gtbox1 = np.array(gtbox0)
+    gtmask1 = np.array(gtmask0)
+    draw1(img0, gtbox1)

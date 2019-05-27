@@ -59,10 +59,6 @@ def _proposal_target_layer_py(rpn_rois, gt_boxes, _num_classes):
     #     (all_rois, np.hstack((zeros, gt_boxes[:, :-1])))
     # )
 
-    # Sanity check: single batch only
-    assert np.all(all_rois[:, 0] == 0), \
-        'Only single item batches are supported'
-
     num_images = 1
 
     # Sample rois with classification labels and bounding box regression
@@ -134,10 +130,10 @@ def _sample_rois(all_rois, gt_boxes, num_classes):
     # overlaps: (rois x gt_boxes)
     overlaps = bbox_overlaps(
         np.ascontiguousarray(all_rois[:, 1:5], dtype=np.float),
-        np.ascontiguousarray(gt_boxes[:, :4], dtype=np.float))  # (n,k)overlaps
+        np.ascontiguousarray(gt_boxes[:, 1:5], dtype=np.float))  # (n,k)overlaps
     gt_assignment = overlaps.argmax(axis=1)  # get the gtbox with max overlaps(n,1)
     max_overlaps = overlaps.max(axis=1)  # get the max overlaps
-    labels = np.where(max_overlaps[:] == 0, np.ones(gt_assignment.shape, dtype='int32'), np.zeros(gt_assignment.shape, 'int32'))
+    labels = np.where(max_overlaps[:] == 0, np.zeros(gt_assignment.shape, dtype='int32'), np.ones(gt_assignment.shape, 'int32'))
     # labels0 = tf.gather(gt_boxes, gt_assignment, axis=0)
     # labels1 = labels0[:, 4]
     # labels = tf.where(max_overlaps==0, labels1, tf.zeros(labels1.shape, tf.int32))
@@ -171,7 +167,9 @@ def _sample_rois(all_rois, gt_boxes, num_classes):
     # Select sampled values from various arrays:
     fg_num = len(fg_inds)
     # labels = labels[keep_inds]
-    labels = tf.gather(labels, keep_inds, axis=0)
+    # labels = tf.gather(labels, keep_inds, axis=0)
+    labels = labels[keep_inds]
+    labels[fg_rois_per_this_image:] = 0
 
     # Clamp labels for the background RoIs to 0
     # labels_fg = tf.cast(labels[:fg_rois_per_this_image], 'int32')

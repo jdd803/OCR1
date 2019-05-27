@@ -20,19 +20,20 @@ https://github.com/rbgirshick/py-faster-rcnn/blob/master/lib/rpn/proposal_layer.
 import numpy as np
 import tensorflow as tf
 
-from lib.bbox.bbox_transform import bbox_transform_inv,clip_boxes
+from lib.bbox.bbox_transform import bbox_transform_inv, clip_boxes
 from config import config as cfg
-from lib.RPN import generate_anchors
-from lib.nms.nms_wrapper import nms
+from lib.RPN.generate_anchors import generate_anchors
+
+
+# def proposal_layer(rpn_bbox_cls_prob, rpn_bbox_pred, im_dims, cfg_key, _feat_stride, anchor_scales):
+#     result = tf.numpy_function(_proposal_layer_py, [rpn_bbox_cls_prob, rpn_bbox_pred, im_dims,
+#                                                     cfg_key, _feat_stride, anchor_scales],
+#                                tf.float32)
+#     result = tf.reshape(tensor=result, shape=[-1, 5])
+#     return result
 
 
 def proposal_layer(rpn_bbox_cls_prob, rpn_bbox_pred, im_dims, cfg_key, _feat_stride, anchor_scales):
-    return tf.reshape(tf.compat.v1.py_func(_proposal_layer_py,
-                                 [rpn_bbox_cls_prob, rpn_bbox_pred, im_dims[0], cfg_key, _feat_stride, anchor_scales],
-                                 tf.float32), [-1, 5])
-
-
-def _proposal_layer_py(rpn_bbox_cls_prob, rpn_bbox_pred, im_dims, cfg_key, _feat_stride, anchor_scales):
     '''
     # Algorithm:
     #
@@ -47,16 +48,12 @@ def _proposal_layer_py(rpn_bbox_cls_prob, rpn_bbox_pred, im_dims, cfg_key, _feat
     # take after_nms_topN proposals after NMS
     # return the top proposals (-> RoIs top, scores top)
     '''
-    _anchors = generate_anchors(scales=np.array(anchor_scales))  #anchor_scales(8,16,32)
+    _anchors = generate_anchors(scales=np.array(anchor_scales))  # anchor_scales(8,16,32)
     _num_anchors = _anchors.shape[0]
-    rpn_bbox_cls_prob = np.transpose(rpn_bbox_cls_prob, [0, 3, 1, 2])  #(n,18,H,W)
-    rpn_bbox_pred = np.transpose(rpn_bbox_pred, [0, 3, 1, 2])  #(n,36,H,W)
+    rpn_bbox_cls_prob = np.transpose(rpn_bbox_cls_prob, [0, 3, 1, 2])  # (n,18,H,W)
+    rpn_bbox_pred = np.transpose(rpn_bbox_pred, [0, 3, 1, 2])  # (n,36,H,W)
 
-    # Only minibatch of 1 supported
-    assert rpn_bbox_cls_prob.shape[0] == 1, \
-        'Only single item batches are supported'
-
-    if cfg_key == 'TRAIN':
+    if cfg_key.numpy() == 0:
         pre_nms_topN = cfg.TRAIN.RPN_PRE_NMS_TOP_N
         post_nms_topN = cfg.TRAIN.RPN_POST_NMS_TOP_N
         nms_thresh = cfg.TRAIN.RPN_NMS_THRESH
@@ -69,8 +66,8 @@ def _proposal_layer_py(rpn_bbox_cls_prob, rpn_bbox_pred, im_dims, cfg_key, _feat
 
     # the first set of _num_anchors channels are bg probs
     # the second set are the fg probs, which we want
-    scores = rpn_bbox_cls_prob[:, _num_anchors:, :, :]   #(n,9,H,W)
-    bbox_deltas = rpn_bbox_pred  #(n,36,H,W)
+    scores = rpn_bbox_cls_prob[:, _num_anchors:, :, :]   # (n,9,H,W)
+    bbox_deltas = rpn_bbox_pred  # (n,36,H,W)
 
     # 1. Generate proposals from bbox deltas and shifted anchors
     height, width = scores.shape[-2:]
@@ -108,18 +105,18 @@ def _proposal_layer_py(rpn_bbox_cls_prob, rpn_bbox_pred, im_dims, cfg_key, _feat
     # scores are (1, A, H, W) format
     # transpose to (1, H, W, A)
     # reshape to (1 * H * W * A, 1) where rows are ordered by (h, w, a)
-    scores = scores.transpose((0, 2, 3, 1)).reshape((-1, 1))   #(1*h*w*a,4)
+    scores = scores.transpose((0, 2, 3, 1)).reshape((-1, 1))   # (1*h*w*a,4)
 
     # Convert anchors into proposals via bbox transformations
-    proposals = bbox_transform_inv(anchors, bbox_deltas)  #(1*h*w*a,4)
+    proposals = bbox_transform_inv(anchors, bbox_deltas)  # (1*h*w*a,4)
 
     # 2. clip predicted boxes to image
-    proposals = clip_boxes(proposals, im_dims)  #(1*h*w*a,4)
+    proposals = clip_boxes(proposals, im_dims)  # (1*h*w*a,4)
 
     # 3. remove predicted boxes with either height or width < threshold
     keep = _filter_boxes(proposals, min_size)
-    proposals = proposals[keep, :]  #（-1,4)
-    scores = scores[keep]   #（-1,4)
+    proposals = proposals[keep, :]  # (-1, 4)
+    scores = scores[keep]   # (-1, 4)
 
     # 4. sort all (proposal, score) pairs by score from highest to lowest
     # 5. take top pre_nms_topN (e.g. 6000)
@@ -132,11 +129,16 @@ def _proposal_layer_py(rpn_bbox_cls_prob, rpn_bbox_pred, im_dims, cfg_key, _feat
     # 6. apply nms (e.g. threshold = 0.7)
     # 7. take after_nms_topN (e.g. 300)
     # 8. return the top proposals (-> RoIs top)
-    keep = nms(np.hstack((proposals, scores)), nms_thresh)
+    scores = np.reshape(scores, (-1,))
+    keep = tf.image.non_max_suppression(proposals, scores, max_output_size=post_nms_topN, iou_threshold=nms_thresh)
+    # scores = np.reshape(scores, (-1, 1))
+    # keep = nms(np.hstack((proposals, scores)), nms_thresh)
+
     if post_nms_topN > 0:
         keep = keep[:post_nms_topN]
     proposals = proposals[keep, :]
-    scores = scores[keep]
+    proposals = np.reshape(proposals, (-1, 4))
+    # scores = scores[keep]
 
     # Output rois blob
     # Our RPN implementation only supports a single input image, so all
@@ -151,4 +153,5 @@ def _filter_boxes(boxes, min_size):
     ws = boxes[:, 2] - boxes[:, 0] + 1
     hs = boxes[:, 3] - boxes[:, 1] + 1
     keep = np.where((ws >= min_size) & (hs >= min_size))[0]
+
     return keep

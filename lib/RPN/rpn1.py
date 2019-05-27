@@ -10,9 +10,8 @@ class RPN(tf.keras.layers.Layer):
     In evaluation mode (eval_mode==True), gt_boxes should be None.
     '''
 
-    def __init__(self, im_dims, feat_stride, eval_mode):
+    def __init__(self, feat_stride, eval_mode):
         super(RPN, self).__init__()
-        self.im_dims = im_dims
         self.feat_stride = feat_stride
         self.anchor_scales = cfg.network.ANCHOR_SCALES
         self.eval_mode = eval_mode

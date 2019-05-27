@@ -3,7 +3,7 @@ import os,sys
 path1 = '../dataset/dataset/ch4_training_localization_transcription_mask/'
 path2 = '../dataset/dataset/ch4_training_localization_transcription_gt/'
 
-for i in range(50):
+for i in range(1000):
     gt_name = 'gt_img_' + str(i + 1) + '.txt'
     mask_name = 'gt_img_' + str(i + 1) + '.txt'
     mask_path = path1 + mask_name
@@ -14,8 +14,9 @@ for i in range(50):
     for line in lines:
         xy = line.split(',')
         x = xy[0::2]
-        x = x[0:-1]
+        x = x[:4]
         y = xy[1::2]
+        y = y[:4]
         x = [int(num) for num in x]
         y = [int(num) for num in y]
         min_x = min(x)

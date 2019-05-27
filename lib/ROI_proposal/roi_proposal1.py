@@ -27,8 +27,19 @@ class RoiProposal(tf.keras.layers.Layer):
         # Determine best proposals
         key = 0 if self.eval_mode is False else 1
         key = tf.convert_to_tensor(key)
-        blobs = proposal_layer(rpn_bbox_cls_prob=rpn_cls_prob, rpn_bbox_pred=rpn_bbox_pred,
+
+        blobs = proposal_layer(rpn_bbox_cls_prob=tf.expand_dims(rpn_cls_prob[0], 0),
+                               rpn_bbox_pred=tf.expand_dims(rpn_bbox_pred[0], 0),
                                im_dims=self.im_dims, cfg_key=key, _feat_stride=self.feat_stride,
-                               anchor_scales=self.anchor_scales)
+                               anchor_scales=self.anchor_scales, batch_ind=0)
         blobs = tf.reshape(blobs, (-1, 5))
+
+        for i in range(1, rpn_cls_score.shape[0]):
+            blob = proposal_layer(rpn_bbox_cls_prob=tf.expand_dims(rpn_cls_prob[i], 0),
+                                  rpn_bbox_pred=tf.expand_dims(rpn_bbox_pred[i], 0),
+                                  im_dims=self.im_dims, cfg_key=key, _feat_stride=self.feat_stride,
+                                  anchor_scales=self.anchor_scales, batch_ind=i)
+            blob = tf.reshape(blob, (-1, 5))
+            blobs = tf.concat((blobs, blob), axis=0)
+
         return blobs

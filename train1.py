@@ -13,7 +13,7 @@ from lib.loss.loss_function import *
 from lib.ROI_proposal.proposal_target_layer import proposal_target_layer
 from lib.RPN.anchor_target_layer import anchor_target_layer
 from lib.loss.loss_function import rpn_cls_loss, rpn_bbox_loss
-from load_data import next_batch
+from load_data import next_batch, next_batch1
 from lib.bbox.bbox_transform import bbox_overlaps
 
 
@@ -22,7 +22,7 @@ def get_keep(inputs, keep):
 
 
 def preprocess(img, gtbox, gtmask):
-    img_size = 480
+    img_size = 640
     img_shape1 = img.shape
     right = img_shape1[1] - img_size
     bottom = img_shape1[0] - img_size
@@ -59,6 +59,14 @@ def preprocess(img, gtbox, gtmask):
     return img1, gtbox1, gtmask1
 
 
+def preprocess1(img, gtbox, gtmask):
+    img_shape1 = img.shape
+    gtbox0 = np.array(gtbox)
+    gtmask0 = np.array(gtmask)
+
+    return img, gtbox0, gtmask0
+
+
 def loss_mask(mask, roi0, gtmask):
     roi = tf.round(roi0,)
     roi = tf.cast(roi, tf.int32)
@@ -68,22 +76,37 @@ def loss_mask(mask, roi0, gtmask):
 
 
 def loss_rpn(rpn_cls_score, rpn_bbox_pred, gt_boxes, img_dims):
+    batch_size = rpn_cls_score.shape[0]
+    gtbox_ind = np.where(gt_boxes[:, 0]==0)
+    gtbox = gt_boxes[gtbox_ind, 1:]
     rpn_labels, rpn_bbox_targets, rpn_bbox_inside_weights, rpn_bbox_outside_weights = \
-        anchor_target_layer(rpn_cls_score, gt_boxes, img_dims,
+        anchor_target_layer(tf.expand_dims(rpn_cls_score[0], 0), np.reshape(gtbox, (-1, 5)), img_dims,
                             8, (2, 4, 8, 16))
+
+    for i in range(1, batch_size):
+        gtbox_ind = np.where(gt_boxes[:, 0] == i)
+        gtbox = gt_boxes[gtbox_ind, 1:]
+        rpn_label, rpn_bbox_target, rpn_bbox_inside_weight, rpn_bbox_outside_weight = \
+            anchor_target_layer(tf.expand_dims(rpn_cls_score[i], 0), np.reshape(gtbox, (-1, 5)), img_dims,
+                                8, (2, 4, 8, 16))
+        rpn_labels = tf.concat((rpn_labels, rpn_label), axis=0)
+        rpn_bbox_targets = tf.concat((rpn_bbox_targets, rpn_bbox_target), axis=0)
+        rpn_bbox_inside_weights = tf.concat((rpn_bbox_inside_weights,
+                                             rpn_bbox_inside_weight), axis=0)
+        rpn_bbox_outside_weights = tf.concat((rpn_bbox_outside_weights,
+                                              rpn_bbox_outside_weight), axis=0)
+
+
     loss1 = rpn_cls_loss(rpn_cls_score, rpn_labels)
     loss2 = rpn_bbox_loss(rpn_bbox_pred, rpn_bbox_targets, rpn_bbox_inside_weights, rpn_bbox_outside_weights)
     return loss1, loss2
 
 
-def loss_cls_bbox(cls, offset, keep_inds, labels, bbox_targets, bbox_inside_weights, bbox_outside_weights):
-    cls_scores1 = tf.gather(cls, keep_inds, axis=0)
-    preds1 = tf.gather(offset, keep_inds, axis=0)
-
+def loss_cls_bbox(cls, offset, labels, bbox_targets, bbox_inside_weights, bbox_outside_weights):
     # compute all boxes' cls_loss
-    loss3 = rfcn_cls_loss(rfcn_cls_score=cls_scores1, labels=labels)
+    loss3 = rfcn_cls_loss(rfcn_cls_score=cls, labels=labels)
     # compute positive boxes' bbox_loss
-    loss4 = rfcn_bbox_loss(rfcn_bbox_pred=preds1, bbox_targets=bbox_targets,
+    loss4 = rfcn_bbox_loss(rfcn_bbox_pred=offset, bbox_targets=bbox_targets,
                            roi_inside_weights=bbox_inside_weights, roi_outside_weights=bbox_outside_weights)
 
     # loss = loss3 + loss4
@@ -100,7 +123,7 @@ def compute_tp_fp_fn(cls, boxes, gt_boxes, threshold):
 
     overlaps = bbox_overlaps(
         np.ascontiguousarray(positive_boxes[:, :], dtype=np.float),
-        np.ascontiguousarray(gt_boxes[:, :4], dtype=np.float))  # (n,k)overlaps
+        np.ascontiguousarray(gt_boxes[:, 1:-1], dtype=np.float))  # (n,k)overlaps
     gt_assignment = overlaps.argmax(axis=1)  # get the gtbox with max overlaps(n,1)
     max_overlaps = overlaps.max(axis=1)  # get the max overlaps
     positive_overlaps = np.where(max_overlaps > 0.5)
@@ -114,94 +137,142 @@ def compute_tp_fp_fn(cls, boxes, gt_boxes, threshold):
 
 
 def main():
-    model = MyModel((480, 480), training=True)
-    opt = tf.keras.optimizers.Adam(lr=0.0004)
+    batch_size = 3
+    model = MyModel((432, 768), training=True)
+    opt = tf.keras.optimizers.Adam(lr=0.0002)
     # model1 = tf.python.keras.Model()
 
     checkpoint_dir = 'path/to/model_dir'
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
 
-    # ckpt = tf.train.Checkpoint(step=tf.Variable(1), optimizer=opt, net=model)
-    # manager = tf.train.CheckpointManager(ckpt, './tf_ckpts', max_to_keep=3)
-    # ckpt.restore(manager.latest_checkpoint)
-    # if manager.latest_checkpoint:
-    #     print("Restored from {}".format(manager.latest_checkpoint))
-    # else:
-    #     print("Initializing from scratch.")
-    img_, gtbox_, gtmask_ = next_batch(1, 0)
-    img0_ = img_['1']
-    gtbox0_ = gtbox_['1']
-    gtmask0_ = gtmask_['1']
-    img1_, gtbox1_, gtmask1_ = preprocess(img0_, gtbox0_, gtmask0_)
-    images = image_mean_subtraction(img1_)
-    pre_ini = model(images)
-    if not os.path.exists("./path/model_weights.h5"):
-        os.makedirs(checkpoint_dir)
-        model.model1.resnet50.load_weights("./path/resnet50_weights/resnet50_weights_tf.h5", by_name=True)
+    ckpt = tf.train.Checkpoint(step=tf.Variable(1), optimizer=opt, net=model)
+    manager = tf.train.CheckpointManager(ckpt, './tf_ckpts', max_to_keep=3)
+    ckpt.restore(manager.latest_checkpoint)
+    if manager.latest_checkpoint:
+        print("Restored from {}".format(manager.latest_checkpoint))
     else:
-        model.load_weights("./path/model_weights.h5")
-        #model.model1.resnet50.load_weights("./path/resnet50_weights/resnet50_weights_tf.h5", by_name=True)
-        pass
-    print("----------------------------")
+        print("Initializing from scratch.")
+        img_, gtbox_, gtmask_ = next_batch(1, 0)
+        img0_ = img_['1']
+        gtbox0_ = gtbox_['1']
+        gtmask0_ = gtmask_['1']
+        img1_, gtbox1_, gtmask1_ = preprocess1(img0_, gtbox0_, gtmask0_)
+        images = image_mean_subtraction(img1_)
+        pre_ini = model(images)
+        model.model1.resnet50.load_weights("./path/resnet50_weights/resnet50_weights_tf.h5", by_name=True)
 
+    pr_file = open("./pr.txt", mode='a', encoding='UTF-8-sig')
 
     epochs = 200
-    img_num = 10
+    ite = 10
 
     for epoch in range(epochs):
         TP = 0.
         FP = 0.
         FN = 0.
 
-        for i in range(img_num):
+        for i in range(ite):
 
-            # ckpt.step.assign_add(1)
-
-            img, gtbox, gtmask = next_batch(1, i % 10)
-            img0 = img[str(i+1)]
-            gtbox0 = gtbox[str(i+1)]
-            gtmask0 = gtmask[str(i+1)]
-            img1, gtbox1, gtmask1 = preprocess(img0, gtbox0, gtmask0)
-            img_dims = img1.shape[0:2]
-            img_mask = generate_mask(img_dims, gtmask1)
+            ckpt.step.assign_add(1)
+            img, gtbox, gtmask = next_batch1(batch_size, i % 400)
+            img_dims = img.shape[1:3]
+            img_mask = generate_mask(img_dims, gtmask, batch_size)
             img_mask = tf.cast(img_mask, tf.int32)
-            images = image_mean_subtraction(img1)
+            images = image_mean_subtraction(img)
             with tf.GradientTape() as t:
-                result, rpn_cls_score, rpn_bbox_pred, keep = model(images)
+                result, rpn_cls_score, rpn_bbox_pred = model(images)
                 roi_pred = result[4]
                 mask_pred = result[3]
                 cls_score = result[2]
                 cls_pred = result[0]
                 offset_pred = result[5]
-                roi_pred_keep = tf.gather(roi_pred, keep, axis=0)
-                cls_score_keep = tf.gather(cls_score, keep, axis=0)
-                cls_pred_keep = tf.gather(cls_pred, keep, axis=0)
-                offset_pred_keep = tf.gather(offset_pred, keep, axis=0)
 
-                rpn_cls_loss1, rpn_bbox_loss1 = loss_rpn(rpn_cls_score, rpn_bbox_pred, gtbox1, img_dims)
+                # compute rpn loss
+                rpn_cls_loss1, rpn_bbox_loss1 = loss_rpn(rpn_cls_score, rpn_bbox_pred, gtbox, img_dims)
                 rpn_loss = rpn_cls_loss1 + rpn_bbox_loss1
-                # the keep rois in rois and gt_boxes
+                total_loss = rpn_loss
+
+                # the first image
+                batch_ind = np.reshape(np.where(np.reshape(roi_pred[:, 0], (-1)) == 0),(-1,))
+                roi_pred1 = tf.gather(roi_pred, batch_ind)
+                mask_pred1 = tf.gather(mask_pred, batch_ind)
+                cls_score1 = tf.gather(cls_score, batch_ind)
+                cls_pred1 = tf.gather(cls_pred, batch_ind)
+                offset_pred1 = tf.gather(offset_pred, batch_ind)
+                keep = model_part3_1(roi_pred1[:, 1:], cls_score1)
+
+                roi_pred_keep = tf.gather(roi_pred1, keep, axis=0)
+                cls_score_keep = tf.gather(cls_score1, keep, axis=0)
+                cls_pred_keep = tf.gather(cls_pred1, keep, axis=0)
+                offset_pred_keep = tf.gather(offset_pred1, keep, axis=0)
+
                 rois1, labels1, bbox_targets1, bbox_inside_weights1, \
                 bbox_outside_weights1, keep_inds, fg_num = proposal_target_layer(
-                    roi_pred_keep, gtbox1, 1
+                    roi_pred_keep, gtbox, 1
                 )
-                print("fg_nums:"+str(fg_num))
-
+                print("positive_nums:" + str(fg_num))
+                cls_scores2 = tf.gather(cls_pred_keep, keep_inds, axis=0)
+                preds2 = tf.gather(offset_pred_keep, keep_inds, axis=0)
                 for j in range(fg_num):
-                    pass
+                    mask1 = model_part3_2(roi_pred1, keep, keep_inds[j], mask_pred1, cls_score1)
+                    rfcn_mask_loss = loss_mask(mask1, roi_pred_keep[keep_inds[j]], img_mask[0])
+                    total_loss = total_loss + 2*rfcn_mask_loss
 
-                rfcn_cls_loss1, rfcn_bbox_loss1 = loss_cls_bbox(cls=cls_pred_keep, offset=offset_pred_keep, keep_inds=keep_inds,
-                                                   labels=labels1, bbox_targets=bbox_targets1,
-                                                   bbox_inside_weights=bbox_inside_weights1,
-                                                   bbox_outside_weights=bbox_outside_weights1)
-                loss1 = rpn_loss + rfcn_cls_loss1
-                total_loss = rpn_cls_loss1 + rpn_bbox_loss1 + 10*rfcn_cls_loss1 + 5*rfcn_bbox_loss1
+                # record the TP FP FN to compute precision and recall
+                gtbox_ind = np.where(gtbox[:, 0]==0)
+                TP1, FP1, FN1 = compute_tp_fp_fn(cls_pred_keep[:, 1], roi_pred_keep[:, 1:], gtbox[gtbox_ind], 0.5)
+                TP += TP1
+                FP += FP1
+                FN += FN1
 
-                for j in range(fg_num):
-                    mask1 = model_part3_2(roi_pred, keep, keep_inds[j], mask_pred, cls_score)
-                    rfcn_mask_loss = loss_mask(mask1, roi_pred_keep[keep_inds[j]], img_mask)
-                    total_loss = total_loss + rfcn_mask_loss
+                for i1 in range(1, batch_size):
+                    batch_ind = np.reshape(np.where(np.reshape(roi_pred[:, 0], (-1))==i1), (-1,))
+                    roi_pred1 = tf.gather(roi_pred, batch_ind)
+                    mask_pred1 = tf.gather(mask_pred, batch_ind)
+                    cls_score1 = tf.gather(cls_score, batch_ind)
+                    cls_pred1 = tf.gather(cls_pred, batch_ind)
+                    offset_pred1 = tf.gather(offset_pred, batch_ind)
+                    keep = model_part3_1(roi_pred1[:, 1:], cls_score1)
+
+                    roi_pred_keep = tf.gather(roi_pred1, keep, axis=0)
+                    cls_score_keep = tf.gather(cls_score1, keep, axis=0)
+                    cls_pred_keep = tf.gather(cls_pred1, keep, axis=0)
+                    offset_pred_keep = tf.gather(offset_pred1, keep, axis=0)
+
+                    # the keep rois in rois and gt_boxes
+                    rois1_1, labels1_1, bbox_targets1_1, bbox_inside_weights1_1, \
+                    bbox_outside_weights1_1, keep_inds, fg_num = proposal_target_layer(
+                        roi_pred_keep, gtbox, 1
+                    )
+                    print("positive_nums:"+str(fg_num))
+                    cls_scores1_1 = tf.gather(cls_pred_keep, keep_inds, axis=0)
+                    preds1_1 = tf.gather(offset_pred_keep, keep_inds, axis=0)
+                    cls_scores2 = tf.concat((cls_scores2, cls_scores1_1), axis=0)
+                    preds2 = tf.concat((preds2, preds1_1), axis=0)
+                    labels1 = tf.concat((labels1, labels1_1), 0)
+                    bbox_targets1 = tf.concat((bbox_targets1, bbox_targets1_1), axis=0)
+                    bbox_inside_weights1 = tf.concat((bbox_inside_weights1, bbox_inside_weights1_1), 0)
+                    bbox_outside_weights1 = tf.concat((bbox_outside_weights1, bbox_outside_weights1_1), 0)
+
+                    for j in range(fg_num):
+                        mask1 = model_part3_2(roi_pred1, keep, keep_inds[j], mask_pred1, cls_score1)
+                        rfcn_mask_loss = loss_mask(mask1, roi_pred_keep[keep_inds[j]], img_mask[i1])
+                        total_loss = total_loss + 2*rfcn_mask_loss
+
+                    gtbox_ind = np.where(gtbox[:, 0] == i1)
+                    TP1, FP1, FN1 = compute_tp_fp_fn(cls_pred_keep[:, 1], roi_pred_keep[:, 1:], gtbox[gtbox_ind], 0.5)
+                    TP += TP1
+                    FP += FP1
+                    FN += FN1
+
+
+                rfcn_cls_loss1, rfcn_bbox_loss1 = loss_cls_bbox(cls=cls_scores2, offset=preds2,
+                                                                labels=labels1, bbox_targets=bbox_targets1,
+                                                                bbox_inside_weights=bbox_inside_weights1,
+                                                                bbox_outside_weights=bbox_outside_weights1)
+
+                total_loss = total_loss + rfcn_cls_loss1 + rfcn_bbox_loss1
 
             if np.isnan(total_loss):
                 exit()
@@ -209,28 +280,22 @@ def main():
             grads = t.gradient(total_loss, model.trainable_variables)
             opt.apply_gradients(zip(grads, model.trainable_variables))
 
-            # record the TP FP FN to compute precision and recall
-            TP1, FP1, FN1 = compute_tp_fp_fn(cls_pred_keep[:, 1], roi_pred_keep[:, 1:], gtbox1, 0.5)
-            TP += TP1
-            FP += FP1
-            FN += FN1
-
             print('Training loss (for one batch) at epoch %s step %s: %s' % (epoch, i, float(total_loss)))
             print('rpn_cls_loss:{:.5f}---rpn_bbox_loss:{:.5f}---rfcn_cls_loss:{:.5f}---'
                   'rfcn_bbox_loss:{}'.format(rpn_cls_loss1, rpn_bbox_loss1,
                                              rfcn_cls_loss1, rfcn_bbox_loss1))
             print(' ' * 20)
 
+            if int(ckpt.step) % 5 == 4:
+                save_path = manager.save()
+                print("save model")
+
         precision = TP / np.maximum((TP + FP), np.finfo(np.float64).eps)
         recall = TP / float(TP + FN)
         print('Precision: %s ------Recall: %s' % (precision, recall))
         print(' '*20)
-
-
-        model.save_weights("./path/model_weights.h5")
-        print("save weights")
-        # save_path = manager.save()
-        # print("Saved checkpoint for step {}: {}".format(int(ckpt.step), save_path))
+        pr_file.write("P:"+str(precision) + '    '+"R"+str(recall))
+        pr_file.write('\n')
 
 
 

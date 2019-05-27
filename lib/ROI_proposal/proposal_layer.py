@@ -33,7 +33,7 @@ from lib.RPN.generate_anchors import generate_anchors
 #     return result
 
 
-def proposal_layer(rpn_bbox_cls_prob, rpn_bbox_pred, im_dims, cfg_key, _feat_stride, anchor_scales):
+def proposal_layer(rpn_bbox_cls_prob, rpn_bbox_pred, im_dims, cfg_key, _feat_stride, anchor_scales, batch_ind):
     '''
     # Algorithm:
     #
@@ -52,10 +52,6 @@ def proposal_layer(rpn_bbox_cls_prob, rpn_bbox_pred, im_dims, cfg_key, _feat_str
     _num_anchors = _anchors.shape[0]
     rpn_bbox_cls_prob = np.transpose(rpn_bbox_cls_prob, [0, 3, 1, 2])  # (n,18,H,W)
     rpn_bbox_pred = np.transpose(rpn_bbox_pred, [0, 3, 1, 2])  # (n,36,H,W)
-
-    # Only minibatch of 1 supported
-    assert rpn_bbox_cls_prob.shape[0] == 1, \
-        'Only single item batches are supported'
 
     if cfg_key.numpy() == 0:
         pre_nms_topN = cfg.TRAIN.RPN_PRE_NMS_TOP_N
@@ -109,13 +105,13 @@ def proposal_layer(rpn_bbox_cls_prob, rpn_bbox_pred, im_dims, cfg_key, _feat_str
     # scores are (1, A, H, W) format
     # transpose to (1, H, W, A)
     # reshape to (1 * H * W * A, 1) where rows are ordered by (h, w, a)
-    scores = scores.transpose((0, 2, 3, 1)).reshape((-1, 1))   # (1*h*w*a,4)
+    scores = scores.transpose((0, 2, 3, 1)).reshape((-1, 1))   # (n*h*w*a,4)
 
     # Convert anchors into proposals via bbox transformations
-    proposals = bbox_transform_inv(anchors, bbox_deltas)  # (1*h*w*a,4)
+    proposals = bbox_transform_inv(anchors, bbox_deltas)  # (n*h*w*a,4)
 
     # 2. clip predicted boxes to image
-    proposals = clip_boxes(proposals, im_dims)  # (1*h*w*a,4)
+    proposals = clip_boxes(proposals, im_dims)  # (n*h*w*a,4)
 
     # 3. remove predicted boxes with either height or width < threshold
     keep = _filter_boxes(proposals, min_size)
@@ -141,12 +137,14 @@ def proposal_layer(rpn_bbox_cls_prob, rpn_bbox_pred, im_dims, cfg_key, _feat_str
     if post_nms_topN > 0:
         keep = keep[:post_nms_topN]
     proposals = proposals[keep, :]
+    proposals = np.reshape(proposals, (-1, 4))
     # scores = scores[keep]
 
     # Output rois blob
     # Our RPN implementation only supports a single input image, so all
     # batch inds are 0
     batch_inds = np.zeros((proposals.shape[0], 1), dtype=np.float32)
+    batch_inds = batch_inds + batch_ind
     blob = np.hstack((batch_inds, proposals.astype(np.float32, copy=False)))   #(n,5)
     return blob
 

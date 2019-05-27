@@ -251,14 +251,9 @@ class ResNet50(tf.keras.Model):
         self.iblock4_2 = IdentityBlock1(3, [512, 512, 2048], stage=5, block='c')
 
     def call(self, inputs, training=None, mask=None):
-        img_input = tf.expand_dims(input=inputs, axis=0)
-        import numpy as np
-        max0 = np.max(img_input)
+        img_input = tf.reshape(inputs, (-1, inputs.shape[-3], inputs.shape[-2], inputs.shape[-1]))
         x = self.pad1(img_input)
-        max1 = np.max(x)
         x = self.conv1(x)
-        weights = self.conv1.get_weights()
-        max2 = np.max(x)
         x = self.bn1(x)
         x = self.ac1(x)
         x = self.pad2(x)

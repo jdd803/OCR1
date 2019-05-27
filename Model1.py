@@ -55,7 +55,7 @@ class ModelPart1(tf.keras.Model):
         self.add2 = tf.keras.layers.Add()
 
         self.inception_text_layer = InceptionTextLayer()
-        self.rpn = RPN(self.img_dims, self.feat_stride, self.training)
+        self.rpn = RPN(self.feat_stride, self.training)
         self.roi_proposal = RoiProposal(self.feat_stride, self.img_dims, not self.training)
 
         self.conv3 = tf.keras.layers.Conv2D(filters=4*cfg.network.PSROI_BINS*cfg.network.PSROI_BINS,
@@ -162,12 +162,13 @@ class ModelPart2(tf.keras.Model):
 
     def call(self, inputs, training=None, mask=None):
         rois, ps_score_map, bbox_shift = inputs
-        print("rois num:"+str(rois.shape[0]))
+        # print("rois num:"+str(rois.shape[0]))
         offsets = self.model22([rois, bbox_shift])
         proposals = bbox_transform_inv_tf(rois[:, -4:], offsets)
         proposals = clip_boxes_tf(proposals, self.img_dims)  # (n, 4)
         zero = tf.zeros((proposals.shape[0], 1))
-        proposals = tf.concat((zero, proposals), axis=-1)
+        inds = tf.reshape(rois[:, 0], (-1, 1))
+        proposals = tf.concat((inds, proposals), axis=-1)
         # rois = tf.concat((rois, proposals), axis=0)  # (2n, 4)
         #
         # bbox = self.model22([rois, bbox_shift])
@@ -176,18 +177,11 @@ class ModelPart2(tf.keras.Model):
         return cls, cls_result, cls_score, mask_result, rois, offsets
 
 
-class ModelPart31(tf.keras.layers.Layer):
-    def __init__(self):
-        super(ModelPart31, self).__init__()
-    def call(self, inputs, **kwargs):
-        rois, cls_score = inputs
-        per_roi = rois[:, 1:]
-        score = tf.reshape(cls_score, (-1, 1))
-
-        # apply nms on rois to get boxes with highest scores
-        score = tf.reshape(cls_score, (-1,))
-        keep = tf.image.non_max_suppression(per_roi, score, max_output_size=300, iou_threshold=0.3)
-        return keep
+def model_part3_1(rois, cls_score):
+    # apply nms on rois to get boxes with highest scores
+    score = tf.reshape(cls_score, (-1,))
+    keep = tf.image.non_max_suppression(rois, score, max_output_size=300, iou_threshold=0.3)
+    return keep
 
 
 def model_part3_2(roi0, keep, i, mask, score):
@@ -239,13 +233,12 @@ class MyModel(tf.keras.Model):
         self.training = training
         self.model1 = ModelPart1(img_dims, training)
         self.model2 = ModelPart2(img_dims)
-        self.model3 = ModelPart31()
 
     def call(self, input):
         """Run the model."""
         rois, ps_score_map, bbox_shift, rpn_cls_score, rpn_bbox_pred = self.model1(input)
         cls, cls_result, cls_score, mask_result, rois, bbox = self.model2([rois, ps_score_map, bbox_shift])
-        keep = self.model3([rois, cls_score])
+
         result = [cls, cls_result, cls_score, mask_result, rois, bbox]
-        return result, rpn_cls_score, rpn_bbox_pred, keep
+        return result, rpn_cls_score, rpn_bbox_pred
 
